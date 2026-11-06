@@ -1,6 +1,6 @@
 /* แผนงานระดมทีม กฟจ.กระบี่ — หน้าเว็บ (GitHub Pages) */
-const GAS_URL = '__GAS_URL__';
-const LIFF_ID = '__LIFF_ID__';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyLaH9mPalvH2dlsyf2KxyBLOj1pACs_h2MtMc1zT9_EicbwhuzTXbhVUz7fqTotms/exec';
+const LIFF_ID = '2012434791-fhYw5iOH';
 
 const UNITS=[
  {id:'ผกส',name:'ผกส.กฟจ.กบ.',c:'#7c3aed'},
