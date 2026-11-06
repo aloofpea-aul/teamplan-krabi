@@ -1,0 +1,477 @@
+/* แผนงานระดมทีม กฟจ.กระบี่ — หน้าเว็บ (GitHub Pages) */
+const GAS_URL = '__GAS_URL__';
+const LIFF_ID = '__LIFF_ID__';
+
+const UNITS=[
+ {id:'ผกส',name:'ผกส.กฟจ.กบ.',c:'#7c3aed'},
+ {id:'ผปบ',name:'ผปบ.กฟจ.กบ.',c:'#0f766e'},
+ {id:'อล',name:'ผปร.กฟส.อล.',c:'#2563eb'},
+ {id:'คท',name:'ผปร.กฟส.คท.',c:'#ea580c'},
+ {id:'หคง',name:'ผปร.กฟส.หคง.',c:'#16a34a'},
+ {id:'กลต',name:'ผปร.กฟส.กลต.',c:'#0891b2'},
+ {id:'ขพ',name:'ผปร.กฟส.ขพ.',c:'#c026d3'},
+];
+const U=Object.fromEntries(UNITS.map(u=>[u.id,u]));
+const FIXED=2;
+const ROLES={admin:'👑 แอดมินระบบ',coadmin:'🛡 โคแอดมิน',planner:'ผู้กำหนด',picker:'ผู้เลือกวัน',viewer:'ดูอย่างเดียว'};
+const RANK={viewer:1,picker:2,planner:3,coadmin:4,admin:5};
+const TM=['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+const TMS=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+const TD=['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
+const TDS=['อา','จ','อ','พ','พฤ','ศ','ส'];
+const thaiNum=s=>String(s).replace(/[0-9]/g,d=>'๐๑๒๓๔๕๖๗๘๙'[d]);
+const pad=n=>String(n).padStart(2,'0');
+const ds=(y,m,d)=>`${y}-${pad(m)}-${pad(d)}`;
+const parse=s=>{const[a,b,c]=s.split('-').map(Number);return new Date(Date.UTC(a,b-1,c))};
+const fmt=dt=>ds(dt.getUTCFullYear(),dt.getUTCMonth()+1,dt.getUTCDate());
+const dow=s=>parse(s).getUTCDay();
+const addD=(s,n)=>{const d=parse(s);d.setUTCDate(d.getUTCDate()+n);return fmt(d)};
+const thDate=s=>{const d=parse(s);return `${TD[d.getUTCDay()]} ${d.getUTCDate()} ${TMS[d.getUTCMonth()]} ${String(d.getUTCFullYear()+543).slice(2)}`};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const TODAY=(()=>{const d=new Date(Date.now()+7*3600e3);return d.toISOString().slice(0,10)})();
+const nextMonth=ym=>{const[y,m]=ym.split('-').map(Number);return m===12?`${y+1}-01`:`${y}-${pad(m+1)}`};
+const prevMonth=ym=>{const[y,m]=ym.split('-').map(Number);return m===1?`${y-1}-12`:`${y}-${pad(m-1)}`};
+const photoUrl=id=>`https://drive.google.com/thumbnail?id=${id}&sz=w800`;
+
+// ---------- state ----------
+let S=null;          // ข้อมูลจากเซิร์ฟเวอร์
+let EV=[];let ME='';let TAB='cal';let CM=TODAY.slice(0,7);let RPT=TODAY.slice(0,7);let RVIEW='sum';
+let PICK=[];let SWP={mine:'',theirs:''};let SHOWX=false;let DRAFT=null;
+let TOKEN=(()=>{try{return localStorage.getItem('tp_token')||''}catch(e){return''}})();
+const rank=()=>RANK[S?.me?.role]||0;
+const isCo=()=>rank()>=4;
+const isPlanner=()=>isCo()||(S?.me?.role==='planner'&&['ผกส','ผปบ'].includes(S.me.unit));
+const ACT=()=>S.active;const CFG=()=>S.rounds[S.active];
+const LOG=()=>(S.picks||[]).filter(p=>p.month===S.active);
+
+// ---------- API ----------
+async function api(action,data={},quiet){
+  if(!quiet)busy(true);
+  try{
+    const r=await fetch(GAS_URL,{method:'POST',body:JSON.stringify({action,token:TOKEN,...data})});
+    const j=await r.json();
+    if(!j.ok){
+      if(j.error==='AUTH'){logout();throw new Error('กรุณาเข้าสู่ระบบใหม่')}
+      throw new Error(j.error);
+    }
+    return j;
+  }finally{if(!quiet)busy(false)}
+}
+async function reload(quiet){
+  const j=await api('state',{},quiet);S=j;EV=j.events||[];
+  try{localStorage.setItem('tp_cache',JSON.stringify(j))}catch(e){}
+  if(!ME||!isCo())ME=S.me.unit;
+  boot();
+}
+async function act(action,data,okMsg){
+  try{await api(action,data);toast(okMsg||'บันทึกแล้ว');await reload(true)}catch(e){toast('⚠ '+e.message,4000)}
+}
+function busy(on){document.getElementById('busy').style.display=on?'flex':'none'}
+function toast(t,ms=2400){const el=document.getElementById('toast');el.textContent=t;el.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>el.style.display='none',ms)}
+
+// ---------- login (LINE) ----------
+function logout(){TOKEN='';try{localStorage.removeItem('tp_token');localStorage.removeItem('tp_cache')}catch(e){}showLogin()}
+function showLogin(msg){document.getElementById('login').style.display='flex';document.getElementById('loginMsg').innerHTML=msg||''}
+async function lineLogin(){
+  try{
+    if(!liff.isLoggedIn()){liff.login({redirectUri:location.origin+location.pathname});return}
+    const idToken=liff.getIDToken();if(!idToken)throw new Error('ไม่ได้รับข้อมูลจาก LINE');
+    const j=await api('login',{idToken});TOKEN=j.token;try{localStorage.setItem('tp_token',TOKEN)}catch(e){}
+    document.getElementById('login').style.display='none';await reload();
+  }catch(e){showLogin('⚠ '+esc(e.message))}
+}
+async function start(){
+  if(TOKEN){
+    try{const c=JSON.parse(localStorage.getItem('tp_cache')||'null');if(c){S=c;EV=c.events||[];ME=S.me.unit;boot()}}catch(e){}
+    reload(!!S).catch(e=>toast('⚠ '+e.message,4000));
+  }else showLogin();
+  try{await liff.init({liffId:LIFF_ID});
+    if(!TOKEN&&liff.isLoggedIn())lineLogin();
+  }catch(e){if(!TOKEN)showLogin('⚠ LINE: '+esc(e.message))}
+}
+
+// ---------- shell ----------
+function boot(){
+  document.getElementById('login').style.display='none';
+  const p=document.getElementById('pending');
+  if(S.me.status!=='approved'){p.style.display='flex';document.getElementById('pendName').textContent=S.me.name;return}
+  p.style.display='none';
+  const who=document.getElementById('who');
+  if(isCo()){
+    who.innerHTML=`<span>${esc(S.me.name)} · ${ROLES[S.me.role]} · ทำในนาม</span><select id="whoSel">${UNITS.map(u=>`<option value="${u.id}" ${u.id===ME?'selected':''}>${u.name}</option>`).join('')}</select>`;
+    document.getElementById('whoSel').onchange=e=>{ME=e.target.value;PICK=[];SWP={mine:'',theirs:''};render()};
+  }else who.innerHTML=`<span>${esc(S.me.name)} · ${S.me.unit?U[S.me.unit].name:'-'} · ${ROLES[S.me.role]||''}</span>`;
+  render();
+}
+function renderNav(){
+  const tabs=[['cal','📅','ปฏิทิน'],['book','✋','เลือกวัน'],['ana','📈','วิเคราะห์'],['rpt','🖨','รายงาน']];
+  if(isPlanner())tabs.push(['set','⚙️',isCo()?'แอดมิน':'กำหนดเงื่อนไข']);
+  if(!tabs.find(t=>t[0]===TAB))TAB='cal';
+  document.getElementById('nav').innerHTML=tabs.map(([k,i,t])=>`<button class="${TAB===k?'on':''}" onclick="go('${k}')"><span class="ic">${i}</span>${t}</button>`).join('');
+}
+function go(t){TAB=t;render();document.querySelector('main').scrollTop=0}
+function render(){if(!S||S.me.status!=='approved')return;renderNav();({cal:vCal,book:vBook,rpt:vRpt,set:vSet,ana:vAna})[TAB]()}
+
+// ---------- helpers ----------
+function evOn(date){return EV.filter(e=>date>=e.start&&date<=e.end)}
+function monthDays(ym){const[y,m]=ym.split('-').map(Number);const n=new Date(Date.UTC(y,m,0)).getUTCDate();return Array.from({length:n},(_,i)=>ds(y,m,i+1))}
+function lockReason(date,cfg=CFG()){
+  const d=dow(date);const ev=evOn(date);
+  if(!cfg.allowWeekend&&(d===0||d===6))return'เสาร์-อาทิตย์';
+  if(ev.some(e=>e.type==='H'))return'วันหยุด';
+  if(cfg.lockTraining&&ev.some(e=>e.type==='T'))return'วันอบรม';
+  if(cfg.lockMeeting&&ev.some(e=>e.type==='M'))return'วันประชุม';
+  const o=ev.filter(e=>e.type==='O');
+  if(o.length)return'จองแล้ว: '+o.map(e=>e.unit+'.').join(',');
+  return'';
+}
+function hlBusy(date){return evOn(date).filter(e=>e.type==='L')}
+function hlUsed(unit,ym){return EV.filter(e=>e.type==='O'&&e.unit===unit&&e.start.startsWith(ym)&&e.hl).length}
+function hlUnit(t){
+  if(/ผกส/.test(t))return'ผกส';if(/ผปบ/.test(t))return'ผปบ';
+  const m={อล:/อล\.|อ่าวลึก/,คท:/คท\.|คลองท่อม/,หคง:/หคง\.|เหนือคลอง/,กลต:/กลต\.|เกาะลันตา/,ขพ:/ขพ\.|เขาพนม/};
+  for(const k in m)if(m[k].test(t))return k;return'นอก';
+}
+function shrink(file){return new Promise(res=>{const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const s=Math.min(1,1280/Math.max(im.width,im.height));const c=document.createElement('canvas');c.width=im.width*s;c.height=im.height*s;c.getContext('2d').drawImage(im,0,0,c.width,c.height);res(c.toDataURL('image/jpeg',.78))};im.src=r.result};r.readAsDataURL(file)})}
+async function filesToData(inp){const out=[];for(const f of [...(inp?.files||[])])out.push(await shrink(f));return out}
+
+// ---------- calendar grid ----------
+function calGrid(ym,cellFn){
+  const days=monthDays(ym);const first=dow(days[0]);
+  let h=TDS.map((t,i)=>`<div class="hd">${innerWidth>700?TD[i]:t}</div>`).join('');
+  for(let i=0;i<first;i++)h+=`<div class="d out"></div>`;
+  days.forEach(d=>h+=cellFn(d));
+  const tail=(7-(first+days.length)%7)%7;for(let i=0;i<tail;i++)h+=`<div class="d out"></div>`;
+  return `<div class="cal">${h}</div>`;
+}
+function evHtml(e){
+  if(e.type==='H')return `<div class="ev H">${esc(e.title)}</div>`;
+  if(e.type==='L')return `<div class="ev L">🔧 กบ.06 → ${esc(e.title)}</div>`;
+  if(e.type==='O'){const u=U[e.unit]||{c:'#666'};
+    return `<div class="ev" style="border-color:${u.c};background:${u.c}14">${e.photos.length?'<span class="cam">📷'+e.photos.length+'</span>':''}<b style="color:#d00">ดับไฟ</b> <b style="color:${u.c}">${esc(e.unit)}.</b><span class="long"> ${esc(e.title)}</span>${e.hl?' <span class="long">⚡ฮอตไลน์</span>':''}</div>`}
+  const lab={T:'🎓 ',M:'🗓 ',W:'',P:'⏳ '}[e.type]||'';
+  return `<div class="ev ${e.type}">${lab}${e.unit&&e.type!=='T'&&e.type!=='M'?'<b>'+esc(e.unit)+'.</b> ':''}<span class="long">${esc(e.title)}</span>${innerWidth<=700?esc(e.type==='T'?'อบรม':e.type==='M'?'ประชุม':e.type==='P'?'เตรียม':'งาน'):''}</div>`;
+}
+function dayCell(d,extraCls='',extra=''){
+  const ev=evOn(d).filter(e=>SHOWX||!'WP'.includes(e.type));const hol=ev.some(e=>e.type==='H');const w=[0,6].includes(dow(d));
+  const order={H:0,O:1,W:2,P:3,T:4,M:5,L:6};
+  const sorted=[...ev].sort((a,b)=>order[a.type]-order[b.type]);
+  const hl=ev.find(e=>e.type==='L');
+  return `<div class="d ${w?'we':''} ${hol?'hol':''} ${d===TODAY?'today':''} ${extraCls}" onclick="dayClick('${d}')"><div class="num">${+d.slice(8)}</div>${sorted.map(evHtml).join('')}${hl?'<span class="hlDot">⚡06</span>':''}${extra}</div>`;
+}
+function monthNav(cur,setter){
+  const [y,m]=cur.split('-').map(Number);
+  return `<div class="row"><button class="btn" onclick="${setter}('${prevMonth(cur)}')">‹</button><div class="mtitle">${TM[m-1]} ${y+543}</div><button class="btn" onclick="${setter}('${nextMonth(cur)}')">›</button></div>`;
+}
+const legend=()=>`<div class="legend">${UNITS.map(u=>`<span><i style="background:${u.c}"></i>${u.id}.</span>`).join('')}<span><i style="background:var(--hol)"></i>วันหยุด PEA</span><span><i style="background:var(--tr)"></i>อบรมทักษะ</span><span><i style="background:var(--mt)"></i>ประชุม</span><span><i style="background:var(--hl)"></i>ฮอตไลน์ กบ.06</span></div>`;
+
+// ---------- view: calendar ----------
+function setCM(m){CM=m;vCal()}
+function vCal(){
+  document.getElementById('view').innerHTML=`
+  <div class="card">${monthNav(CM,'setCM')}${legend()}
+  <label class="row note" style="margin-top:6px"><input type="checkbox" ${SHOWX?'checked':''} onchange="SHOWX=this.checked;vCal()"> แสดงงานนอกแผนระดมทีม (งานที่แต่ละหน่วยจัดเอง) — ไม่นับในระบบ</label></div>
+  ${calGrid(CM,d=>dayCell(d))}
+  <p class="note">แตะวันที่เพื่อดูรายละเอียด และแนบรูปหน้างาน</p>`;
+}
+function dayClick(d){
+  if(TAB==='book')return bookClick(d);
+  const ev=evOn(d).filter(e=>SHOWX||!'WP'.includes(e.type));
+  let h=`<div class="row"><h3 class="sp">${thDate(d)}</h3><button class="btn ghost" onclick="closeSheet()">✕</button></div>`;
+  if(!ev.length)h+=`<p class="note">ไม่มีรายการ — ตามภาระหน้าที่</p>`;
+  ev.forEach(e=>{
+    const u=U[e.unit];const mine=(e.type==='O'&&e.unit===S.me.unit&&rank()>=2)||isPlanner();
+    const canDel=e.type==='O'?isCo():isPlanner();
+    const typ={H:'วันหยุด',O:'ดับไฟระดมทีม',W:'งานนอกแผน',P:'เตรียมงาน',T:'อบรมทักษะ',M:'ประชุม',L:'ฮอตไลน์ กบ.06'}[e.type];
+    h+=`<div class="card" style="border:1px solid var(--line)">
+      <div class="row"><span class="chip" style="background:${u?u.c:({H:'#dc2626',T:'#7c3aed',M:'#2563eb',L:'#b45309'}[e.type]||'#6b7280')}">${typ}</span>${u?'<b>'+u.name+'</b>':''}${e.start!==e.end?`<span class="note">${thDate(e.start)} – ${thDate(e.end)}</span>`:''}</div>
+      <div style="margin-top:6px;font-size:15px">${e.type==='L'?'กบ.06 ไป ':''}${esc(e.title)}</div>
+      ${e.crew?`<div class="note">ทีม/อุปกรณ์: ${esc(e.crew)}</div>`:''}
+      ${e.hl?`<div class="note">⚡ ฮอตไลน์ กบ.06 ช่วยงาน</div>`:''}
+      ${e.photos.length?`<div class="thumbs" style="margin-top:6px">${e.photos.map(p=>`<a href="https://drive.google.com/file/d/${p}/view" target="_blank"><img src="${photoUrl(p)}" loading="lazy"></a>`).join('')}</div>`:''}
+      <div class="row" style="margin-top:8px">
+      ${(e.type==='O'||e.type==='W')&&mine?`<label class="btn">📷 แนบรูป<input type="file" accept="image/*" multiple hidden onchange="addPhoto('${e.id}',this,'${d}')"></label>`:''}
+      ${e.type==='O'&&mine?`<button class="btn" onclick="editEv('${e.id}')">✏️ แก้รายละเอียด</button>`:''}
+      ${canDel?`<button class="btn" onclick="delEv('${e.id}')">🗑 ลบ</button>`:''}</div>
+    </div>`;
+  });
+  if(isPlanner())h+=`<div class="row"><button class="btn" onclick="adminAdd('${d}','T')">+ วันอบรม</button><button class="btn" onclick="adminAdd('${d}','M')">+ วันประชุม</button><button class="btn" onclick="adminAdd('${d}','H')">+ วันหยุด</button><button class="btn" onclick="adminAdd('${d}','L')">+ กบ.06 ไปนอกพื้นที่</button><button class="btn" onclick="adminAdd('${d}','W')">+ งานนอกแผน</button></div>`;
+  openSheet(h);
+}
+async function addPhoto(id,inp,d){const photos=await filesToData(inp);if(!photos.length)return;closeSheet();await act('addPhoto',{id,photos},'แนบรูปแล้ว '+photos.length+' รูป');}
+function editEv(id){const e=EV.find(x=>x.id===id);
+  openSheet(`<h3>แก้รายละเอียด ${thDate(e.start)}</h3><div class="f"><label>งาน / สถานที่</label><input id="eT" value="${esc(e.title)}"></div><div class="f"><label>ทีม / อุปกรณ์</label><input id="eC" value="${esc(e.crew)}"></div>
+  <div class="row"><button class="btn" onclick="closeSheet()">ยกเลิก</button><span class="sp"></span><button class="btn pri" onclick="closeSheet();act('editEvent',{id:'${id}',title:document.getElementById('eT').value,crew:document.getElementById('eC').value})">บันทึก</button></div>`)}
+function delEv(id){const e=EV.find(x=>x.id===id);
+  openSheet(`<h3>ลบรายการนี้?</h3><p>${thDate(e.start)} — ${esc(e.unit?e.unit+'. ':'')}${esc(e.title)}</p><div class="row"><button class="btn" onclick="closeSheet()">ยกเลิก</button><span class="sp"></span><button class="btn" style="background:#dc2626;color:#fff" onclick="closeSheet();act('delEvent',{id:'${id}'},'ลบแล้ว')">ลบ</button></div>`)}
+function adminAdd(d,type){
+  const lab={T:'หัวข้ออบรม (เช่น อบรมทบทวนทักษะ คิว กฟส.อล.)',M:'หัวข้อประชุม',H:'ชื่อวันหยุด',L:'กบ.06 ไปที่ (เช่น กฟส.ป่าตอง)',W:'งานนอกแผน (เช่น ติดตั้ง SF6 กบ.309)'}[type];
+  openSheet(`<h3>เพิ่มรายการ ${thDate(d)}</h3><div class="f"><label>${lab}</label><input id="aT"></div>
+  ${type==='W'?`<div class="f"><label>หน่วยงาน</label><select id="aU">${UNITS.map(u=>`<option value="${u.id}">${u.name}</option>`).join('')}</select></div>`:''}
+  <div class="f"><label>ถึงวันที่ (ถ้าหลายวัน)</label><input id="aE" type="date" value="${d}"></div>
+  <div class="row"><button class="btn" onclick="closeSheet()">ยกเลิก</button><span class="sp"></span><button class="btn pri" onclick="adminSave('${d}','${type}')">บันทึก</button></div>`);
+}
+function adminSave(d,type){const t=document.getElementById('aT').value.trim();if(!t)return;const e=document.getElementById('aE').value||d;
+  closeSheet();act('addEvent',{ev:{start:d,end:e<d?d:e,type,title:t,unit:document.getElementById('aU')?.value||''}})}
+function openSheet(h){document.getElementById('sheet').innerHTML=h;document.getElementById('mask').classList.add('on')}
+function closeSheet(){document.getElementById('mask').classList.remove('on')}
+
+// ---------- view: booking ----------
+function curUnit(){const c=CFG();return c.order[c.turn.idx]}
+function allDone(){const c=CFG();return c.turn.round>c.rounds}
+function vBook(){
+  const v=document.getElementById('view');
+  const c=S.active&&CFG();
+  if(!c||c.status==='setup'){v.innerHTML=`<div class="card"><b>ยังไม่เปิดรอบเลือกวัน</b><p class="note">ผกส./ผปบ. จะเปิดรอบเลือกวันของเดือนถัดไป แล้วระบบจะแจ้งให้ทราบ</p>${isPlanner()?'<button class="btn pri" onclick="go(\'set\')">ไปตั้งค่ารอบ</button>':''}</div>`;return}
+  const ym=S.active;const [y,m]=ym.split('-').map(Number);
+  const done=c.status!=='open';const cu=done?'':curUnit();
+  const canPick=rank()>=2;const myTurn=!done&&cu===ME&&canPick&&(ME===S.me.unit||isCo());const quota=c.perRound[cu]||1;
+  const log=LOG();
+  let q='';
+  for(let r=1;r<=c.rounds;r++){
+    q+=`<div class="note" style="margin:6px 0 4px">รอบที่ ${r}</div><div class="queue">`;
+    c.order.forEach((id,i)=>{const u=U[id];
+      const lg=log.find(l=>l.unit===id&&l.round===r);
+      const now=!done&&c.turn.round===r&&c.turn.idx===i;
+      const st=lg?'✔ '+lg.dates.map(x=>+x.slice(8)).join(', ')+' '+TMS[m-1]:now?'⏳ กำลังเลือก':'รอคิว';
+      q+=`<div class="q ${now?'now':''} ${lg?'done':''}"><div class="n">ลำดับ ${i+1}${i<FIXED?' 🔒':''} · ได้ ${c.perRound[id]} วัน</div><b style="color:${u.c}">${u.name}</b><div class="st">${st}</div></div>`;
+    });q+='</div>';
+  }
+  q+=`<div class="note" style="margin:6px 0 4px">ขั้นสุดท้าย</div><div class="queue"><div class="q ${c.status==='swap'?'now':''}"><b>🔁 ขอแลกวันกันได้</b><div class="st">${c.status==='swap'?'เปิดแล้ว':c.status==='published'?'ปิดแล้ว':'เปิดเมื่อครบทุกรอบ'}</div></div><div class="q ${c.status==='published'?'now':''}"><b>📢 ประกาศแผน</b><div class="st">${c.status==='published'?'ประกาศแล้ว':'โดย ผกส./ผปบ.'}</div></div></div>`;
+  let ban;
+  if(c.status==='published')ban=`<div class="banner turn">📢 ประกาศแผนเดือนนี้แล้ว</div>`;
+  else if(done)ban=`<div class="banner turn">✅ ทุกหน่วยเลือกครบแล้ว — ขอแลกวันกับหน่วยอื่นได้ (อีกฝ่ายต้องกดยอมรับ)</div>`;
+  else if(myTurn)ban=`<div class="banner turn">ถึงคิว ${U[ME].name} แล้ว — ต้องเลือกให้ครบ ${quota} วัน (รอบที่ ${c.turn.round}) · เลือกแล้ว ${PICK.length}/${quota}<br><span style="font-weight:400;font-size:13px">ไม่มีการข้ามคิว — หน่วยถัดไปจะเลือกได้เมื่อคุณยืนยันแล้วเท่านั้น</span></div>`;
+  else ban=`<div class="banner wait">รอ <b style="color:${U[cu].c}">${U[cu].name}</b> เลือก (รอบที่ ${c.turn.round})${canPick?'':' · คุณมีสิทธิ์ดูอย่างเดียว'}</div>`;
+  const hlLeft=(c.hlQuota[ME]||0)-hlUsed(ME,ym);
+  v.innerHTML=`
+  <div class="card">
+    <div class="row"><b style="font-size:16px">เลือกวันดับไฟระดมทีม เดือน${TM[m-1]} ${y+543}</b><span class="sp"></span>${c.deadline?`<span class="note">ปิดรับ ${thDate(c.deadline)}</span>`:''}<button class="btn" onclick="reload().catch(e=>toast(e.message))">🔄</button></div>
+    ${q}
+  </div>
+  ${ban}
+  ${c.status==='swap'?swapPanel():''}
+  <div class="card"><div class="row"><b>ปฏิทิน ${TM[m-1]} ${y+543}</b><span class="sp"></span><span class="note">🟩 เลือกได้ · ▨ ล็อก · 🟨 ที่กำลังเลือก</span></div>
+  <div class="note" style="margin-top:4px">สิทธิ์ฮอตไลน์ กบ.06 ของ ${ME}. เดือนนี้: เหลือ ${Math.max(0,hlLeft)} / ${c.hlQuota[ME]||0} วัน (ขอพร้อมกับตอนเลือกวัน)</div></div>
+  ${calGrid(ym,d=>{
+    const why=lockReason(d,c);const sel=PICK.find(p=>p.date===d)||SWP.mine===d||SWP.theirs===d;
+    const booked=why.startsWith('จองแล้ว');
+    const cls=sel?'sel':why?(done&&booked?'':'lk'):(myTurn?'av':'');
+    return dayCell(d,cls,why&&!sel&&!(done&&booked)?`<div class="why">🔒 ${esc(why)}</div>`:'');
+  })}
+  ${myTurn?`<div class="card" style="margin-top:12px">
+    ${PICK.length?PICK.map((p,i)=>`<div class="row" style="border-bottom:1px solid var(--line);padding:6px 0"><b>${thDate(p.date)}</b><span>${esc(p.title)}</span><span class="note">${esc(p.crew)}</span>${p.hl?'⚡ฮอตไลน์':''}${p.photos.length?' 📷'+p.photos.length:''}<span class="sp"></span><button class="btn" onclick="PICK.splice(${i},1);vBook()">ลบ</button></div>`).join(''):'<span class="note">แตะวันสีเขียวเพื่อเลือก</span>'}
+    <div class="row" style="margin-top:10px"><span class="sp"></span><button class="btn ok" ${PICK.length===quota?'':'disabled'} onclick="confirmPick()">ยืนยัน ${PICK.length}/${quota} วัน → ส่งคิวถัดไป</button></div>
+  </div>`:''}`;
+}
+function bookClick(d){
+  const c=CFG();
+  if(c.status==='swap')return swapClick(d);
+  if(c.status!=='open')return;
+  const cu=curUnit();if(cu!==ME||rank()<2){const why=lockReason(d,c);toast(why?('🔒 '+why):'ยังไม่ถึงคิวของคุณ');return}
+  if(PICK.find(p=>p.date===d)){PICK=PICK.filter(p=>p.date!==d);return vBook()}
+  const why=lockReason(d,c);if(why)return toast('🔒 เลือกไม่ได้: '+why);
+  const quota=c.perRound[ME]||1;if(PICK.length>=quota)return toast('รอบนี้เลือกได้ '+quota+' วัน');
+  const hlLeft=(c.hlQuota[ME]||0)-hlUsed(ME,S.active)-PICK.filter(p=>p.hl).length;
+  const hb=hlBusy(d);const hlOk=hlLeft>0&&!hb.length;
+  openSheet(`<div class="row"><h3 class="sp">จองดับไฟ ${thDate(d)}</h3><button class="btn ghost" onclick="closeSheet()">✕</button></div>
+  <div class="f"><label>งาน / สถานที่</label><input id="bT" placeholder="เช่น ปป.บ้านบากัน, ย้ายแนว..."></div>
+  <div class="f"><label>ฟีดเดอร์ / ช่วงเวลาดับไฟ</label><input id="bF" placeholder="เช่น F3 08.30–16.00 น."></div>
+  <div class="f"><label>ขอทีม / อุปกรณ์</label><select id="bC"><option>ทุกทีม+กระเช้าติดเครน</option><option>ทุกทีม+กระเช้าติดรถ</option><option>ทุกทีม+กระเช้า</option><option>กระเช้า07 ทุกสาขา</option><option>ทีมซ่อมย่อย+กระเช้า07</option><option>ทุกทีม</option></select></div>
+  <label class="row" style="margin-bottom:10px;${hlOk?'':'opacity:.5'}"><input type="checkbox" id="bH" ${hlOk?'':'disabled'}> ⚡ ขอฮอตไลน์ กบ.06 ช่วยงาน <span class="note">${hb.length?'(วันนี้ กบ.06 ไป '+esc(hb[0].title)+')':hlLeft>0?'(เหลือสิทธิ์ '+hlLeft+' วัน)':'(สิทธิ์เดือนนี้หมดแล้ว)'}</span></label>
+  <div class="f"><label>แนบรูป / แผนผังหน้างาน</label><input type="file" id="bP" accept="image/*" multiple></div>
+  <div class="row"><button class="btn" onclick="closeSheet()">ยกเลิก</button><span class="sp"></span><button class="btn pri" onclick="savePick('${d}')">เลือกวันนี้</button></div>`);
+}
+async function savePick(d){
+  const t=document.getElementById('bT').value.trim()||'(ยังไม่ระบุงาน)';const f=document.getElementById('bF').value.trim();
+  const p={date:d,title:t+(f?' '+f:''),crew:document.getElementById('bC').value,hl:document.getElementById('bH').checked,photos:await filesToData(document.getElementById('bP'))};
+  PICK.push(p);closeSheet();vBook();
+}
+async function confirmPick(){
+  const items=PICK;
+  try{await api('pick',{unit:ME,items});PICK=[];toast('ยืนยันแล้ว — ส่งคิวถัดไป');await reload(true)}
+  catch(e){toast('⚠ '+e.message,4500);await reload(true)}
+}
+// ---------- แลกวัน ----------
+function swapPanel(){
+  const sw=(S.swaps||[]).filter(s=>s.month===S.active);const pend=sw.filter(s=>s.st==='รอ');
+  const inbox=pend.filter(s=>s.to===ME);const sent=pend.filter(s=>s.from===ME);const can=rank()>=2;
+  const tOut=SWP.theirs&&EV.find(e=>e.type==='O'&&e.start===SWP.theirs);
+  return `<div class="card"><b>🔁 ขอแลกวัน</b>
+  ${can?`<p class="note" style="margin:4px 0 8px">1) แตะวันของ ${ME}. ที่จะให้ไป 2) แตะวันของหน่วยอื่นที่อยากได้ 3) ส่งคำขอ — อีกฝ่ายกดยอมรับแล้วระบบจะสลับวันให้</p>
+  <div class="row"><span>วันของฉัน: <b>${SWP.mine?thDate(SWP.mine):'—'}</b></span><span>⇄</span><span>วันที่ขอ: <b>${tOut?thDate(SWP.theirs)+' ('+tOut.unit+'.)':'—'}</b></span><span class="sp"></span><button class="btn pri" ${SWP.mine&&SWP.theirs?'':'disabled'} onclick="sendSwap()">ส่งคำขอแลก</button></div>`:''}
+  ${inbox.length&&can?`<div style="margin-top:10px"><b>คำขอถึง ${ME}.</b>${inbox.map(s=>`<div class="row" style="border-top:1px solid var(--line);padding:6px 0"><span><b style="color:${U[s.from].c}">${s.from}.</b> ขอแลก ${thDate(s.a)} ⇄ ${thDate(s.b)} ของคุณ</span><span class="sp"></span><button class="btn" onclick="act('swapAns',{id:'${s.id}',ok:false},'ปฏิเสธแล้ว')">ปฏิเสธ</button><button class="btn ok" onclick="act('swapAns',{id:'${s.id}',ok:true},'แลกวันสำเร็จ')">ยอมรับ</button></div>`).join('')}</div>`:''}
+  ${sent.length?`<div class="note" style="margin-top:8px">ส่งแล้วรออีกฝ่าย: ${sent.map(s=>thDate(s.a)+' ⇄ '+thDate(s.b)+' ('+s.to+'.)').join(', ')}</div>`:''}
+  ${sw.filter(s=>s.st!=='รอ').length?`<div class="note" style="margin-top:8px">ประวัติ: ${sw.filter(s=>s.st!=='รอ').map(s=>`${s.from}.⇄${s.to}. ${+s.a.slice(8)}↔${+s.b.slice(8)} ${s.st}`).join(' · ')}</div>`:''}
+  </div>`;
+}
+function swapClick(d){
+  if(rank()<2)return;
+  const o=EV.find(e=>e.type==='O'&&e.start===d);if(!o)return toast('แตะได้เฉพาะวันที่มีการจองดับไฟ');
+  if(o.unit===ME)SWP.mine=SWP.mine===d?'':d;else SWP.theirs=SWP.theirs===d?'':d;vBook();
+}
+function sendSwap(){const a=SWP.mine,b=SWP.theirs;SWP={mine:'',theirs:''};act('swapReq',{unit:ME,a,b},'ส่งคำขอแล้ว')}
+
+// ---------- view: settings ----------
+function defaultRound(){return{rounds:2,perRound:{ผกส:2,ผปบ:1,อล:1,คท:1,หคง:1,กลต:1,ขพ:1},hlQuota:{ผกส:2,ผปบ:2,อล:1,คท:1,หคง:1,กลต:1,ขพ:1},order:UNITS.map(u=>u.id),allowWeekend:false,lockTraining:true,lockMeeting:true,deadline:''}}
+let SETM='';
+function vSet(){
+  const months=Object.keys(S.rounds).sort();
+  if(!SETM)SETM=S.active||nextMonth(TODAY.slice(0,7));
+  const saved=S.rounds[SETM];
+  if(!DRAFT||DRAFT._m!==SETM)DRAFT=Object.assign(defaultRound(),JSON.parse(JSON.stringify(saved||{})),{_m:SETM});
+  const c=DRAFT;const st=saved?.status||'ยังไม่สร้าง';const started=(S.picks||[]).some(p=>p.month===SETM);
+  const [y,m]=SETM.split('-').map(Number);
+  const stLabel={setup:'กำลังตั้งค่า',open:'เปิดให้เลือกวัน',swap:'ช่วงขอแลกวัน',published:'ประกาศแล้ว'}[st]||st;
+  document.getElementById('view').innerHTML=`
+  <div class="banner adm">${S.me.role==='admin'?'👑 คุณเป็นแอดมินระบบ — เห็นและแก้ได้ทุกอย่าง รวมถึงแต่งตั้งโคแอดมิน':'ตั้งเงื่อนไขการเลือกวันของแต่ละเดือน'}</div>
+  <div class="card"><div class="row"><b>เดือน</b>
+   <button class="btn" onclick="SETM=prevMonth(SETM);vSet()">‹</button><b>${TM[m-1]} ${y+543}</b><button class="btn" onclick="SETM=nextMonth(SETM);vSet()">›</button>
+   <span class="chip" style="background:#74045f">${stLabel}</span>${S.active===SETM?'<span class="chip" style="background:#16a34a">เดือนที่ใช้งาน</span>':''}
+   <span class="sp"></span>
+   <button class="btn" onclick="saveRound()">💾 บันทึก</button>
+   ${(!saved||st==='setup')?`<button class="btn ok" onclick="saveRound('open')">▶ เปิดให้เลือกวัน</button>`:''}
+   ${st==='swap'?`<button class="btn pri" onclick="saveRound('published')">📢 ประกาศแผน</button>`:''}
+   ${st==='published'?`<button class="btn" onclick="saveRound('swap')">↩ เปิดแลกวันอีกครั้ง</button>`:''}
+  </div><p class="note">เปิดให้เลือกวันแล้วเดือนนี้จะเป็น “เดือนที่ใช้งาน” · เปิดได้ทีละเดือน</p></div>
+  <div class="grid2">
+  <div class="card"><b>ลำดับสิทธิ์และจำนวนวัน</b>
+    <div class="f" style="margin-top:8px"><label>จำนวนรอบ</label><div class="seg">${[1,2,3].map(n=>`<button class="${c.rounds===n?'on':''}" onclick="DRAFT.rounds=${n};vSet()">${n} รอบ</button>`).join('')}</div></div>
+    <div class="f"><label>วันปิดรับการเลือก</label><input type="date" value="${c.deadline||''}" onchange="DRAFT.deadline=this.value"></div>
+    <table><tr><th>ลำดับ</th><th class="c">เลือกได้/รอบ</th><th class="c">ฮอตไลน์/เดือน</th></tr>
+    ${c.order.map((id,i)=>{const u=U[id];return`<tr><td style="white-space:nowrap">${i<FIXED?'🔒':`<button class="btn" style="padding:0 6px" ${i<=FIXED||started?'disabled':''} onclick="moveOrder(${i},-1)">▲</button><button class="btn" style="padding:0 6px" ${i===c.order.length-1||started?'disabled':''} onclick="moveOrder(${i},1)">▼</button>`} ${i+1}. <b style="color:${u.c}">${u.name}</b></td>
+      <td class="c"><div class="seg">${[1,2,3].map(n=>`<button class="${c.perRound[id]===n?'on':''}" onclick="DRAFT.perRound['${id}']=${n};vSet()">${n}</button>`).join('')}</div></td>
+      <td class="c"><div class="seg">${[0,1,2,3].map(n=>`<button class="${c.hlQuota[id]===n?'on':''}" onclick="DRAFT.hlQuota['${id}']=${n};vSet()">${n}</button>`).join('')}</div></td></tr>`}).join('')}
+    </table>
+    <p class="note">ผกส. และ ผปบ. เลือกก่อนเสมอ · ลำดับ กฟส. ปรับได้ก่อนมีหน่วยเลือกวัน · ทุกรอบเรียงลำดับเดิม · ไม่มีการข้ามคิว</p>
+  </div>
+  <div class="card"><b>วันที่ล็อก (เลือกไม่ได้)</b>
+    ${[['allowWeekend','เปิดให้เลือกเสาร์-อาทิตย์ได้'],['lockTraining','ล็อกวันอบรมทักษะ'],['lockMeeting','ล็อกวันประชุม']].map(([k,t])=>`<label class="row" style="margin:8px 0"><input type="checkbox" ${c[k]?'checked':''} onchange="DRAFT.${k}=this.checked"> ${t}</label>`).join('')}
+    <p class="note">วันหยุด PEA ล็อกอัตโนมัติ · วันที่หน่วยอื่นเลือกแล้วล็อกทันที (ระดมทีมวันละ 1 งาน)<br>เพิ่ม/แก้ วันหยุด วันอบรม วันประชุม และวันที่ กบ.06 ไปนอกพื้นที่ ได้โดยแตะวันในหน้าปฏิทิน — ควรใส่ให้ครบก่อนกด “เปิดให้เลือกวัน”</p>
+  </div></div>
+  ${S.users?usersCard():''}
+  <div class="card"><b>ประวัติการแก้ไขโดยผู้ดูแล</b><table style="margin-top:6px">${(S.audit||[]).slice(0,25).map(a=>`<tr><td class="note" style="white-space:nowrap">${esc(String(a.at).slice(0,16).replace('T',' '))}</td><td>${esc(a.by)}</td><td>${esc(a.action)}</td><td class="note">${esc(a.detail)}</td></tr>`).join('')||'<tr><td class="note">ยังไม่มี</td></tr>'}</table></div>`;
+}
+function moveOrder(i,d){const o=DRAFT.order;const j=i+d;if(j<FIXED||j>=o.length)return;[o[i],o[j]]=[o[j],o[i]];vSet()}
+async function saveRound(status){
+  const cfg=Object.assign({},DRAFT);delete cfg._m;delete cfg.turn;delete cfg.status;
+  await act('saveRound',{month:SETM,cfg,status,makeActive:status==='open'},status==='open'?'เปิดให้เลือกวันแล้ว':status==='published'?'ประกาศแผนแล้ว':'บันทึกแล้ว');DRAFT=null;
+}
+function usersCard(){
+  const co=isCo();const adm=S.me.role==='admin';
+  const users=[...S.users].sort((a,b)=>(a.status==='pending'?-1:0)-(b.status==='pending'?-1:0));
+  return `<div class="card" style="overflow:auto"><div class="row"><b>สิทธิ์ผู้ใช้ (ล็อกอินด้วย LINE)</b><span class="sp"></span><span class="note">คนใหม่เปิดลิงก์ → ล็อกอิน LINE → ขึ้น “รออนุมัติ” ที่นี่</span></div>
+  <table style="margin-top:6px"><tr><th>ชื่อ LINE</th><th>หน่วยงาน</th><th>สิทธิ์</th><th>สถานะ</th><th></th></tr>
+  ${users.map(x=>{const lock=!co||(x.role==='admin'&&!adm);const k=x.lineId;
+   return `<tr><td>${x.pic?`<img src="${esc(x.pic)}" style="width:26px;height:26px;border-radius:50%;vertical-align:middle;margin-right:6px">`:''}${esc(x.name)}</td>
+   <td><select id="u_${k}" ${lock?'disabled':''}><option value="">— เลือก —</option>${UNITS.map(u=>`<option value="${u.id}" ${x.unit===u.id?'selected':''}>${u.name}</option>`).join('')}</select></td>
+   <td><select id="r_${k}" ${lock?'disabled':''}>${['','admin','coadmin','planner','picker','viewer'].map(r=>`<option value="${r}" ${x.role===r?'selected':''} ${(r==='admin'||r==='coadmin')&&!adm?'disabled':''}>${ROLES[r]||'— เลือก —'}</option>`).join('')}</select></td>
+   <td><select id="s_${k}" ${lock?'disabled':''}>${[['pending','รออนุมัติ'],['approved','อนุมัติ'],['blocked','ระงับ']].map(([v,t])=>`<option value="${v}" ${x.status===v?'selected':''}>${t}</option>`).join('')}</select></td>
+   <td>${lock?'':`<button class="btn ${x.status==='pending'?'ok':''}" onclick="saveUser('${k}')">${x.status==='pending'?'อนุมัติ':'บันทึก'}</button>`}</td></tr>`}).join('')}
+  </table>
+  <p class="note">👑 แอดมินระบบ = ทุกอย่าง + แต่งตั้ง/ถอดโคแอดมิน + โอนสิทธิ์ · 🛡 โคแอดมิน = อนุมัติผู้ใช้ ตั้งรอบ แก้ไขแทนหน่วยอื่น (ลงประวัติ) · ผู้กำหนด (ผกส./ผปบ.) = ตั้งรอบ ประกาศแผน แก้วันหยุด/อบรม/ประชุม · ผู้เลือกวัน = เลือก/แลกวันของหน่วยตัวเอง · ดูอย่างเดียว = ดูปฏิทินและรายงาน</p></div>`;
+}
+function saveUser(k){
+  const unit=document.getElementById('u_'+k).value,role=document.getElementById('r_'+k).value;let status=document.getElementById('s_'+k).value;
+  if(!unit||!role)return toast('เลือกหน่วยงานและสิทธิ์ก่อน');
+  if(status==='pending')status='approved';
+  act('setUser',{lineId:k,unit,role,status},'บันทึกสิทธิ์แล้ว');
+}
+
+// ---------- view: analysis ----------
+let AY=TODAY.slice(0,4);
+function vAna(){
+  const yr=AY;const months=Array.from({length:12},(_,i)=>`${yr}-${pad(i+1)}`);
+  const OUT=EV.filter(e=>e.type==='O'&&e.start.startsWith(yr));
+  const doneM=months.filter(m=>OUT.some(e=>e.start.startsWith(m)));
+  const order=UNITS.map(u=>u.id);
+  const v=document.getElementById('view');
+  const yNav=`<div class="row"><button class="btn" onclick="AY=String(+AY-1);vAna()">‹</button><b style="font-size:16px">วิเคราะห์แผนระดมทีม ปี ${+yr+543}</b><button class="btn" onclick="AY=String(+AY+1);vAna()">›</button></div>`;
+  if(!OUT.length){v.innerHTML=`<div class="card">${yNav}<p class="note">ยังไม่มีข้อมูลปีนี้</p></div>`;return}
+  const cnt=(u,m)=>OUT.filter(e=>e.unit===u&&e.start.startsWith(m)).length;
+  const mx=Math.max(1,...order.flatMap(u=>doneM.map(m=>cnt(u,m))));
+  const heat=`<table><tr><th>หน่วย</th>${doneM.map(m=>`<th class="c">${TMS[+m.slice(5)-1]}</th>`).join('')}<th class="c">รวม</th><th class="c">เฉลี่ย/ด.</th></tr>
+   ${order.map(id=>{const u=U[id];const row=doneM.map(m=>cnt(id,m));const s=row.reduce((a,b)=>a+b,0);
+    return `<tr><td><b style="color:${u.c}">${id}.</b></td>${row.map(v=>`<td class="c" style="background:${u.c}${Math.round(v/mx*200+(v?30:0)).toString(16).padStart(2,'0')};color:${v/mx>.6?'#fff':'inherit'}">${v||''}</td>`).join('')}<td class="c"><b>${s}</b></td><td class="c">${(s/doneM.length).toFixed(1)}</td></tr>`}).join('')}</table>`;
+  const wd=[1,2,3,4,5].map(d=>OUT.filter(e=>dow(e.start)===d).length);const wmx=Math.max(1,...wd);
+  const wdH=wd.map((v,i)=>`<div class="row" style="margin:3px 0"><span style="width:70px">${TD[i+1]}</span><div class="bar" style="width:${v/wmx*220}px"></div><span>${v}</span></div>`).join('');
+  const L=EV.filter(e=>e.type==='L'&&e.start.startsWith(yr));
+  const days=e=>{let n=0,d=e.start;while(d<=e.end){if(![0,6].includes(dow(d)))n++;d=addD(d,1)}return n};
+  const hl={};L.forEach(e=>{const k=hlUnit(e.title);hl[k]=(hl[k]||0)+days(e)});
+  const keys=[...order,'นอก'];const hmx=Math.max(1,...keys.map(k=>hl[k]||0));const htot=Math.max(1,keys.reduce((s,k)=>s+(hl[k]||0),0));
+  const hlH=keys.map(k=>`<div class="row" style="margin:3px 0"><span style="width:90px">${k==='นอก'?'นอกพื้นที่/สถานี':k+'.'}</span><div class="bar" style="width:${(hl[k]||0)/hmx*200}px;background:${U[k]?U[k].c:'#b45309'}"></div><span>${hl[k]||0} วัน (${Math.round((hl[k]||0)/htot*100)}%)</span></div>`).join('');
+  const eq={'กระเช้าติดเครน':0,'กระเช้าติดรถ':0,'กระเช้า (ไม่ระบุ)':0,'กระเช้า07/ทีมซ่อมย่อย':0,'อื่น ๆ':0};
+  OUT.forEach(e=>{const c=e.crew;if(/ติดเครน/.test(c))eq['กระเช้าติดเครน']++;else if(/ติดรถ/.test(c))eq['กระเช้าติดรถ']++;else if(/07|ซ่อมย่อย/.test(c))eq['กระเช้า07/ทีมซ่อมย่อย']++;else if(/กระเช้า/.test(c))eq['กระเช้า (ไม่ระบุ)']++;else eq['อื่น ๆ']++});
+  const emx=Math.max(1,...Object.values(eq));
+  const eqH=Object.entries(eq).map(([k,v])=>`<div class="row" style="margin:3px 0"><span style="width:150px">${k}</span><div class="bar" style="width:${v/emx*160}px;background:#475569"></div><span>${v}</span></div>`).join('');
+  const gap=order.map(id=>{const d=OUT.filter(e=>e.unit===id).map(e=>parse(e.start)).sort((a,b)=>a-b);
+    const g=d.slice(1).map((x,i)=>(x-d[i])/864e5);return{id,avg:g.length?g.reduce((a,b)=>a+b,0)/g.length:0,min:g.length?Math.min(...g):0}});
+  const capacity=doneM.reduce((s,m)=>s+monthDays(m).filter(d=>![0,6].includes(dow(d))&&!evOn(d).some(e=>e.type==='H')).length,0);
+  const avg=order.slice(FIXED).map(id=>({id,a:OUT.filter(e=>e.unit===id).length/doneM.length})).sort((a,b)=>b.a-a.a);
+  const peak=wd.indexOf(Math.max(...wd));const low=wd.indexOf(Math.min(...wd));
+  const ins=[
+   `ในกลุ่ม กฟส. <b>${avg[0].id}.</b> ได้วันระดมทีมมากสุด เฉลี่ย ${avg[0].a.toFixed(1)} วัน/เดือน · <b>${avg[avg.length-1].id}.</b> น้อยสุด ${avg[avg.length-1].a.toFixed(1)} วัน/เดือน`,
+   `วัน<b>${TD[peak+1]}</b>ถูกจองมากสุด (${wd[peak]} ครั้ง) วัน<b>${TD[low+1]}</b>น้อยสุด (${wd[low]})`,
+   `กบ.06 อยู่นอกพื้นที่/สถานี ${hl['นอก']||0} วันทำการ (${Math.round((hl['นอก']||0)/htot*100)}%)`,
+   `ใช้วันทำการไปกับระดมทีม ${OUT.length} จาก ${capacity} วัน (${Math.round(OUT.length/Math.max(1,capacity)*100)}%)`,
+   `งานที่ใช้กระเช้าติดเครน ${eq['กระเช้าติดเครน']} ครั้ง`,
+  ];
+  v.innerHTML=`
+  <div class="card">${yNav}<div class="note">ข้อมูล ${doneM.length} เดือน · ดับไฟระดมทีม ${OUT.length} ครั้ง · ไม่นับงานนอกแผน</div></div>
+  <div class="card"><b>💡 ข้อสังเกต</b><ul style="margin:6px 0 0;padding-left:20px;line-height:1.7">${ins.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+  <div class="card" style="overflow:auto"><b>จำนวนวันดับไฟระดมทีม แยกหน่วย × เดือน</b><div style="margin-top:6px">${heat}</div></div>
+  <div class="grid2">
+   <div class="card"><b>วันในสัปดาห์ที่ถูกเลือก</b><div style="margin-top:6px">${wdH}</div></div>
+   <div class="card"><b>ฮอตไลน์ กบ.06 ไปช่วยใคร (วันทำการ)</b><div style="margin-top:6px">${hlH}</div></div>
+   <div class="card"><b>อุปกรณ์ที่ขอ</b><div style="margin-top:6px">${eqH}</div></div>
+   <div class="card"><b>ระยะห่างระหว่างงานของแต่ละหน่วย</b><table style="margin-top:6px"><tr><th>หน่วย</th><th class="c">เฉลี่ย (วัน)</th><th class="c">ใกล้สุด (วัน)</th></tr>${gap.map(g=>`<tr><td><b style="color:${U[g.id].c}">${g.id}.</b></td><td class="c">${g.avg.toFixed(0)}</td><td class="c" style="${g.min&&g.min<4?'color:#d00;font-weight:700':''}">${g.min}</td></tr>`).join('')}</table><p class="note">ใกล้สุดน้อยกว่า 4 วัน (สีแดง) = ทีมออกงานถี่</p></div>
+  </div>`;
+}
+
+// ---------- view: report ----------
+function setRPT(m){RPT=m;vRpt()}
+function vRpt(){
+  const ym=RPT;const [y,m]=ym.split('-').map(Number);
+  let body='';
+  if(RVIEW==='sum'){
+    const ev=EV.filter(e=>e.start.startsWith(ym));
+    const rows=UNITS.map(u=>{const o=ev.filter(e=>e.type==='O'&&e.unit===u.id);
+      const hl=ev.filter(e=>e.type==='L'&&hlUnit(e.title)===u.id).length;
+      return{u,o:o.length,hl,ph:o.reduce((s,e)=>s+e.photos.length,0)}});
+    const mx=Math.max(1,...rows.map(r=>r.o));
+    body=`<div class="card"><b>สรุป ${TM[m-1]} ${y+543}</b>
+    <table style="margin-top:6px"><tr><th>หน่วยงาน</th><th>ดับไฟระดมทีม</th><th class="c">ฮอตไลน์ (ครั้ง)</th><th class="c">รูป</th></tr>
+    ${rows.map(r=>`<tr><td><b style="color:${r.u.c}">${r.u.name}</b></td><td><div class="row"><div class="bar" style="width:${r.o/mx*90}px;background:${r.u.c}"></div>${r.o}</div></td><td class="c">${r.hl}</td><td class="c">${r.ph}</td></tr>`).join('')}
+    </table></div>
+    <div class="card"><b>รายการทั้งเดือน</b><table style="margin-top:6px"><tr><th>วันที่</th><th>หน่วยงาน</th><th>งาน</th><th>ทีม/อุปกรณ์</th></tr>
+    ${ev.filter(e=>e.type==='O').sort((a,b)=>a.start<b.start?-1:1).map(e=>`<tr><td>${thDate(e.start)}</td><td><b style="color:${U[e.unit]?.c}">${e.unit}.</b></td><td>${esc(e.title)}${e.hl?' ⚡':''}</td><td>${esc(e.crew)}</td></tr>`).join('')}</table></div>`;
+  }else body=paper(ym);
+  document.getElementById('view').innerHTML=`
+  <div class="card noprint">${monthNav(RPT,'setRPT')}
+  <div class="row" style="margin-top:8px;justify-content:center"><div class="seg"><button class="${RVIEW==='sum'?'on':''}" onclick="RVIEW='sum';vRpt()">สรุป</button><button class="${RVIEW==='paper'?'on':''}" onclick="RVIEW='paper';vRpt()">แบบฟอร์มพิมพ์</button></div>
+  ${RVIEW==='paper'?'<button class="btn pri" onclick="window.print()">🖨 พิมพ์ / บันทึก PDF</button>':''}</div></div>
+  ${body}`;
+}
+function paper(ym){
+  const [y,m]=ym.split('-').map(Number);const days=monthDays(ym);const first=dow(days[0]);
+  const cells=[];for(let i=0;i<first;i++)cells.push('');days.forEach(d=>cells.push(d));while(cells.length%7)cells.push('');
+  let rows='';
+  for(let r=0;r<cells.length;r+=7){rows+='<tr>'+cells.slice(r,r+7).map(d=>{
+    if(!d)return'<td></td>';
+    const ev=evOn(d);let h=`<div class="pn">${thaiNum(+d.slice(8))}</div>`;
+    ev.filter(e=>e.type!=='L'&&e.type!=='P').forEach(e=>{
+      if(e.type==='H')h+=`<div class="red" style="font-size:15px">${esc(e.title)}</div>`;
+      else if(e.type==='O')h+=`<div><span class="red">ดับไฟ</span> ${e.unit==='ผกส'||e.unit==='ผปบ'?e.unit+'.':'กฟส.'+e.unit+'.'}<br>${esc(e.title)}<br>${esc(e.crew)}</div>`;
+      else h+=`<div>${esc(e.title)}${e.crew?'<br>'+esc(e.crew):''}</div>`;
+    });
+    const hl=ev.filter(e=>e.type==='L');
+    if(!ev.filter(e=>e.type!=='L'&&e.type!=='P').length&&![0,6].includes(dow(d)))h+='<div style="margin-top:10px">ตามภาระหน้าที่</div>';
+    if(hl.length)h+=`<div class="hl">กบ.๐๖ ${hl[0].title.startsWith('ช่วยงาน')?'':'ไป '}${esc(thaiNum(hl[0].title))}</div>`;
+    return`<td>${h}</td>`}).join('')+'</tr>'}
+  return `<div class="paper" style="overflow:auto"><h2>แผนงาน กฟจ.กระบี่ ประจำเดือน${TM[m-1]} ${thaiNum(y+543)}</h2>
+  <table class="ptable"><tr>${TD.map(t=>`<th>${t}</th>`).join('')}</tr>${rows}</table></div>`;
+}
+
+document.getElementById('mask').onclick=e=>{if(e.target.id==='mask')closeSheet()};
+addEventListener('resize',()=>{clearTimeout(window._r);window._r=setTimeout(render,200)});
+start();
