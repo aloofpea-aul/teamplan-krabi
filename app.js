@@ -72,8 +72,40 @@ function toast(t,ms=2400){const el=document.getElementById('toast');el.textConte
 // ---------- login (LINE) ----------
 function logout(){TOKEN='';try{localStorage.removeItem('tp_token');localStorage.removeItem('tp_cache')}catch(e){}showLogin()}
 function showLogin(msg){document.getElementById('login').style.display='flex';document.getElementById('loginMsg').innerHTML=msg||''}
+const IS_PWA=(()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true}catch(e){return false}})();
+let PAIR_T=null;
+function pairStart(){
+  // แอปบนหน้าจอโฮม: ให้ไปล็อกอินในแอป LINE แล้วกลับมารับโทเคน (iPhone จะไม่ส่งการล็อกอินกลับเข้าแอปเอง)
+  const code=Array.from(crypto.getRandomValues(new Uint8Array(24)),b=>'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'[b%55]).join('');
+  try{localStorage.setItem('tp_pair',code)}catch(e){}
+  window.open('https://liff.line.me/'+LIFF_ID+'?pair='+code,'_blank');
+  showLogin('⏳ กำลังรอเข้าสู่ระบบใน LINE…<br><span style="color:#6b6274">กด "อนุญาต" ใน LINE แล้วกลับมาที่แอปนี้ ระบบจะเข้าให้เอง</span>');
+  pairPoll();
+}
+async function pairPoll(){
+  clearTimeout(PAIR_T);let code='';try{code=localStorage.getItem('tp_pair')||''}catch(e){}
+  if(!code||TOKEN)return;
+  try{const j=await api('pairCheck',{code},true);
+    if(j.token){TOKEN=j.token;try{localStorage.setItem('tp_token',TOKEN);localStorage.removeItem('tp_pair')}catch(e){}
+      document.getElementById('login').style.display='none';await reload();return}}catch(e){}
+  PAIR_T=setTimeout(pairPoll,2500);
+}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!TOKEN)pairPoll()});
+async function pairFinish(code){
+  // หน้านี้เปิดอยู่ในแอป LINE เพื่อยืนยันตัวตนให้แอปบนหน้าจอโฮม
+  document.getElementById('login').style.display='flex';
+  const msg=document.getElementById('loginMsg');
+  try{
+    if(!liff.isLoggedIn()){liff.login({redirectUri:location.href});return}
+    await api('pairLogin',{idToken:liff.getIDToken(),code},true);
+    document.querySelector('#login button').style.display='none';
+    msg.style.color='#16a34a';msg.innerHTML='<b style="font-size:18px">✅ เข้าสู่ระบบสำเร็จ</b><br>กลับไปที่แอป "ระดมทีม" บนหน้าจอโฮมได้เลย';
+    setTimeout(()=>{try{liff.closeWindow()}catch(e){}},2500);
+  }catch(e){msg.textContent='⚠ '+e.message}
+}
 async function lineLogin(){
   try{
+    if(IS_PWA){pairStart();return}
     if(!liff.isLoggedIn()){liff.login({redirectUri:location.origin+location.pathname});return}
     const idToken=liff.getIDToken();if(!idToken)throw new Error('ไม่ได้รับข้อมูลจาก LINE');
     const j=await api('login',{idToken});TOKEN=j.token;try{localStorage.setItem('tp_token',TOKEN)}catch(e){}
@@ -81,6 +113,11 @@ async function lineLogin(){
   }catch(e){showLogin('⚠ '+esc(e.message))}
 }
 async function start(){
+  const qs=new URLSearchParams(location.search);
+  let pair=qs.get('pair')||new URLSearchParams((qs.get('liff.state')||'').replace(/^[^?]*\?/,'')).get('pair');
+  if(pair){try{await liff.init({liffId:LIFF_ID})}catch(e){}
+    pair=new URLSearchParams(location.search).get('pair')||pair;return pairFinish(pair)}
+  if(IS_PWA&&!TOKEN){showLogin();pairPoll();try{await liff.init({liffId:LIFF_ID})}catch(e){}return}
   if(TOKEN){
     try{const c=JSON.parse(localStorage.getItem('tp_cache')||'null');if(c){S=c;EV=c.events||[];ME=S.me.unit;boot()}}catch(e){}
     reload(!!S).catch(e=>toast('⚠ '+e.message,4000));

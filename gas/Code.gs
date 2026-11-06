@@ -87,6 +87,19 @@ function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).se
 
 function route_(p) {
   if (p.action === 'login') return login_(p.idToken);
+  // ล็อกอินแอปบนหน้าจอโฮม (PWA): แอปสร้างรหัส → เปิด LINE ล็อกอิน → LINE ฝากโทเคนไว้ใต้รหัส → แอปมารับ
+  if (p.action === 'pairLogin') {
+    if (!/^[A-Za-z0-9]{24,64}$/.test(p.code || '')) return {ok: false, error: 'รหัสไม่ถูกต้อง'};
+    const r = login_(p.idToken); if (!r.ok) return r;
+    CacheService.getScriptCache().put('pair:' + p.code, r.token, 600);
+    return {ok: true};
+  }
+  if (p.action === 'pairCheck') {
+    if (!/^[A-Za-z0-9]{24,64}$/.test(p.code || '')) return {ok: false, error: 'รหัสไม่ถูกต้อง'};
+    const c = CacheService.getScriptCache(); const t = c.get('pair:' + p.code);
+    if (t) c.remove('pair:' + p.code);
+    return {ok: true, token: t || ''};
+  }
   const u = auth_(p.token);
   if (!u) return {ok: false, error: 'AUTH'};
   if (u.status !== 'approved' && p.action !== 'state') return {ok: false, error: 'PENDING'};
