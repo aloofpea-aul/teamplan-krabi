@@ -124,6 +124,7 @@ function login_(idToken) {
       const first = !users.some(x => x.role === 'admin');
       u = {lineId: j.sub, name: j.name || 'LINE user', pic: j.picture || '', unit: first ? 'อล' : '', role: first ? 'admin' : '', status: first ? 'approved' : 'pending', createdAt: now, lastLogin: now};
       append_('Users', u); audit_(u, first ? 'สร้างแอดมินระบบ' : 'ขอเข้าใช้งาน', u.name);
+      if (!first) push_(idsAdmins_(), '👤 ' + u.name + ' ขอเข้าใช้งานแผนระดมทีม\nเข้าแท็บ แอดมิน → สิทธิ์ผู้ใช้ เพื่ออนุมัติ');
     } else update_('Users', u._row, {name: j.name || u.name, pic: j.picture || u.pic, lastLogin: now});
     const token = Utilities.getUuid() + Utilities.getUuid();
     append_('Sessions', {token, lineId: j.sub, expires: Date.now() + 60 * 864e5});
@@ -147,6 +148,35 @@ function actUnit_(u, unit) { // หน่วยที่ทำรายการ
   if (unit && unit !== u.unit) { if (!isCo_(u)) throw new Error('ไม่มีสิทธิ์ทำแทนหน่วยอื่น'); return unit; }
   return u.unit;
 }
+
+
+// ================= LINE แจ้งเตือน (Messaging API · OA "ระดมทีม กฟจ.กระบี่") =================
+const APP_URL = 'https://aloofpea-aul.github.io/teamplan-krabi/';
+const TMN = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+const UNAME = {ผกส:'ผกส.กฟจ.กบ.', ผปบ:'ผปบ.กฟจ.กบ.', อล:'ผปร.กฟส.อล.', คท:'ผปร.กฟส.คท.', หคง:'ผปร.กฟส.หคง.', กลต:'ผปร.กฟส.กลต.', ขพ:'ผปร.กฟส.ขพ.'};
+function mName_(ym) { const [y, m] = ym.split('-').map(Number); return TMN[m - 1] + ' ' + (y + 543); }
+function thD_(d) { const [y, m, dd] = d.split('-').map(Number); return dd + ' ' + TMN[m - 1].slice(0, 3) + '.'; }
+function push_(ids, text) {
+  const token = SP.getProperty('LINE_TOKEN'); ids = [...new Set(ids.filter(Boolean))];
+  if (!token || !ids.length) return;
+  try {
+    UrlFetchApp.fetch('https://api.line.me/v2/bot/message/multicast', {method: 'post', contentType: 'application/json',
+      headers: {Authorization: 'Bearer ' + token}, muteHttpExceptions: true,
+      payload: JSON.stringify({to: ids.slice(0, 500), messages: [{type: 'text', text: text + '\n\n👉 ' + APP_URL}]})});
+  } catch (e) { Logger.log('push fail ' + e); }
+}
+function approved_() { return rows_('Users').filter(u => u.status === 'approved'); }
+function idsOfUnit_(unit) { return approved_().filter(u => u.unit === unit && rank_(u) >= 2).map(u => u.lineId); }
+function idsAll_() { return approved_().map(u => u.lineId); }
+function idsAdmins_() { return approved_().filter(u => rank_(u) >= 4).map(u => u.lineId); }
+function notifyTurn_(month, cfg) {
+  if (cfg.status === 'swap') { push_(idsAll_(), '✅ แผนระดมทีม ' + mName_(month) + '\nทุกหน่วยเลือกวันครบแล้ว — ขอแลกวันกับหน่วยอื่นได้จนกว่าจะประกาศแผน'); return; }
+  if (cfg.status !== 'open') return;
+  const unit = cfg.order[cfg.turn.idx];
+  push_(idsOfUnit_(unit), '✋ ถึงคิว ' + UNAME[unit] + ' เลือกวันดับไฟระดมทีม\nเดือน ' + mName_(month) + ' · รอบที่ ' + cfg.turn.round + ' · เลือกได้ ' + (cfg.perRound[unit] || 1) + ' วัน\nหน่วยถัดไปรอคุณยืนยันอยู่ครับ');
+}
+/** ทดสอบส่งข้อความหาแอดมิน (รันจากหน้า Apps Script) */
+function testPush() { push_(idsAdmins_(), '🔔 ทดสอบแจ้งเตือน แผนงานระดมทีม กฟจ.กระบี่'); }
 
 // ================= state =================
 function state_(u) {
@@ -208,6 +238,7 @@ function pick_(u, p) {
   cfg.turn.idx++; if (cfg.turn.idx >= cfg.order.length) { cfg.turn.idx = 0; cfg.turn.round++; }
   if (allDone_(cfg)) cfg.status = 'swap';
   setCfg_('round:' + month, cfg);
+  notifyTurn_(month, cfg);
   return {ok: true};
 }
 function savePhoto_(dataUrl, name) {
@@ -235,12 +266,13 @@ function swapReq_(u, p) {
   if (!A || A.unit !== unit) throw new Error('วันแรกต้องเป็นวันของหน่วยคุณ');
   if (!B || B.unit === unit) throw new Error('วันที่ขอต้องเป็นของหน่วยอื่น');
   append_('Swaps', {id: newId_(), month, from: unit, to: B.unit, a: p.a, b: p.b, st: 'รอ', by: u.name, at: new Date().toISOString()});
+  push_(idsOfUnit_(B.unit), '🔁 ' + UNAME[unit] + ' ขอแลกวันกับ ' + UNAME[B.unit] + '\nให้วัน ' + thD_(p.a) + ' ⇄ ขอวัน ' + thD_(p.b) + '\nเข้าไปกด ยอมรับ/ปฏิเสธ ในหน้าเลือกวัน');
   return {ok: true};
 }
 function swapAns_(u, p) {
   const s = rows_('Swaps').find(x => x.id === p.id); if (!s || s.st !== 'รอ') throw new Error('ไม่พบคำขอ');
   if (s.to !== u.unit && !isCo_(u)) throw new Error('ตอบได้เฉพาะหน่วยที่ถูกขอ');
-  if (!p.ok) { update_('Swaps', s._row, {st: 'ปฏิเสธ', answeredBy: u.name, answeredAt: new Date().toISOString()}); return {ok: true}; }
+  if (!p.ok) { update_('Swaps', s._row, {st: 'ปฏิเสธ', answeredBy: u.name, answeredAt: new Date().toISOString()}); push_(idsOfUnit_(s.from), '❌ ' + UNAME[s.to] + ' ปฏิเสธการแลกวัน ' + thD_(s.a) + ' ⇄ ' + thD_(s.b)); return {ok: true}; }
   const evs = rows_('Events');
   const A = evs.find(e => e.type === 'O' && e.start === s.a && e.unit === s.from), B = evs.find(e => e.type === 'O' && e.start === s.b && e.unit === s.to);
   if (!A || !B) { update_('Swaps', s._row, {st: 'ยกเลิก (วันเปลี่ยนไปแล้ว)'}); throw new Error('วันที่ขอแลกเปลี่ยนไปแล้ว'); }
@@ -248,6 +280,7 @@ function swapAns_(u, p) {
   evs.filter(e => e.type === 'L' && (e.ofOut === A.id || e.ofOut === B.id)).forEach(l => { const d = l.ofOut === A.id ? s.b : s.a; update_('Events', l._row, {start: d, end: d}); });
   update_('Swaps', s._row, {st: 'สำเร็จ', answeredBy: u.name, answeredAt: new Date().toISOString()});
   audit_(u, 'แลกวัน', s.from + ' ' + s.a + ' ⇄ ' + s.to + ' ' + s.b);
+  push_(idsOfUnit_(s.from).concat(idsAdmins_()), '✅ แลกวันสำเร็จ\n' + UNAME[s.from] + ' ได้ ' + thD_(s.b) + ' · ' + UNAME[s.to] + ' ได้ ' + thD_(s.a));
   return {ok: true};
 }
 
@@ -263,8 +296,11 @@ function saveRound_(u, p) {
     if (p.status === 'setup' && rows_('Picks').some(x => x.month === month)) throw new Error('มีหน่วยเลือกวันแล้ว ย้อนกลับไม่ได้');
     cfg.status = p.status;
   }
+  const prev = old ? old.status : '';
   setCfg_('round:' + month, cfg);
   if (p.makeActive) setCfg_('active', month);
+  if (p.status === 'open' && prev !== 'open') { push_(idsAll_(), '📅 เปิดเลือกวันดับไฟระดมทีม เดือน ' + mName_(month) + '\n' + cfg.rounds + ' รอบ · เรียงตามลำดับสิทธิ์ ' + cfg.order.map(x => x + '.').join(' → ') + (cfg.deadline ? '\nปิดรับ ' + thD_(cfg.deadline) : '')); notifyTurn_(month, cfg); }
+  if (p.status === 'published' && prev !== 'published') push_(idsAll_(), '📢 ประกาศแผนงานระดมทีม เดือน ' + mName_(month) + ' แล้ว\nดูปฏิทินและพิมพ์แผนได้ที่ลิงก์');
   audit_(u, 'ตั้งค่ารอบ ' + month, {status: cfg.status, rounds: cfg.rounds});
   return {ok: true};
 }
@@ -303,6 +339,7 @@ function setUser_(u, p) {
     const me = rows_('Users').find(x => x.lineId === u.lineId); update_('Users', me._row, {role: 'coadmin'});
   }
   update_('Users', t._row, {unit: p.unit, role: p.role, status: p.status});
+  if (t.status !== 'approved' && p.status === 'approved') push_([t.lineId], '✅ อนุมัติให้เข้าใช้งานแผนระดมทีม กฟจ.กระบี่ แล้ว\nหน่วยงาน ' + UNAME[p.unit] + ' · สิทธิ์ ' + ({admin:'แอดมินระบบ', coadmin:'โคแอดมิน', planner:'ผู้กำหนด', picker:'ผู้เลือกวัน', viewer:'ดูอย่างเดียว'}[p.role] || p.role));
   audit_(u, 'ตั้งสิทธิ์ผู้ใช้', t.name + ' → ' + p.unit + ' / ' + p.role + ' / ' + p.status);
   return {ok: true};
 }
