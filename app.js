@@ -488,7 +488,7 @@ function vRpt(){
   <div class="row" style="margin-top:8px;justify-content:center"><div class="seg"><button class="${RVIEW==='sum'?'on':''}" onclick="RVIEW='sum';vRpt()">สรุป</button><button class="${RVIEW==='paper'?'on':''}" onclick="RVIEW='paper';vRpt()">เอกสารขออนุมัติแผน</button></div>
   ${RVIEW==='paper'?'<button class="btn pri" onclick="window.print()">🖨 พิมพ์ / บันทึก PDF</button>':''}</div></div>
   ${body}`;
-  if(RVIEW==='paper')fitDoc();
+  if(RVIEW==='paper'){fitDoc();try{document.fonts.ready.then(fitDoc)}catch(e){}}
 }
 // ---------- เอกสารขออนุมัติแผนประจำเดือน (หน้า 1 บันทึก + หน้า 2 ปฏิทินแนวนอน) ----------
 const DOCDEF={from:'ผปบ.กฟจ.กระบี่',to:'กฟจ.กระบี่',no:'ต.๒ กบ.(ปบ.)',dear:'ผจก.กฟจ.กระบี่',
@@ -496,9 +496,17 @@ const DOCDEF={from:'ผปบ.กฟจ.กระบี่',to:'กฟจ.กร
   apNo:'',apTo:'ผจก.กฟฟ.ในสังกัด กฟจ.กระบี่',apCc:'รจก., หผ.ปบ., หผ.กส., หผ.มต., จป.(ว.) กฟจ.กระบี่',
   apName:'นายมนตรี ธรรมประดิษฐ์',apPos:'รจก. รักษาการแทน ผจก.กฟจ.กระบี่',
   foot1:'ผปบ.กฟจ.กระบี่',foot2:'โทร. ๑๔๕๕๕',withX:false,withMemo:true};
-let DOC=(()=>{try{return Object.assign({},DOCDEF,JSON.parse(localStorage.getItem('tp_doc')||'{}'))}catch(e){return Object.assign({},DOCDEF)}})();
+let DOC=null;
+const DOCKEEP=['from','to','no','dear','signName','signPos','apTo','apCc','apName','apPos','foot1','foot2'];
+function docInit(){if(DOC)return;let loc={};try{loc=JSON.parse(localStorage.getItem('tp_doc')||'{}')}catch(e){}
+  DOC=Object.assign({},DOCDEF,(S&&S.doc&&S.doc.fields)||{},{withMemo:loc.withMemo!==false,withX:!!loc.withX})}
+let DOC_T=null;
 let DOCDATE=TODAY;
-function docSet(k,v){DOC[k]=v;try{localStorage.setItem('tp_doc',JSON.stringify(DOC))}catch(e){}vRpt()}
+function docSet(k,v){DOC[k]=v;
+  if(k==='signName'||k==='apName'){const h=((S.doc&&S.doc.names)||[]).find(x=>x.n===v.trim());if(h&&h.pos)DOC[k==='signName'?'signPos':'apPos']=h.pos}
+  if(k==='withMemo'||k==='withX'){try{localStorage.setItem('tp_doc',JSON.stringify({withMemo:DOC.withMemo,withX:DOC.withX}))}catch(e){}}
+  else{clearTimeout(DOC_T);DOC_T=setTimeout(async()=>{try{const j=await api('docSave',{doc:DOC},true);S.doc=j.doc;toast('บันทึกข้อมูลเอกสารแล้ว')}catch(e){toast('⚠ '+e.message)}},600)}
+  vRpt()}
 const thFull=s=>{const d=parse(s);return thaiNum(`${d.getUTCDate()} ${TM[d.getUTCMonth()]} ${d.getUTCFullYear()+543}`)};
 const T=s=>esc(thaiNum(s??''));
 function docMemo(ym){
@@ -514,7 +522,7 @@ function docMemo(ym){
   <p class="para">จึงเรียนมาเพื่อโปรดพิจารณาอนุมัติ และแจ้งส่วนที่เกี่ยวข้องดำเนินการต่อไป</p>
   <div class="sign"><div class="sp"></div>(${T(DOC.signName)})<br>${T(DOC.signPos)}</div>
   <div class="endorse">
-    <div>ที่ ${T(DOC.no)} ${DOC.apNo?T(DOC.apNo):'<span class="dots"></span>'}</div>
+    <div>ที่ ${T(DOC.no)} <span class="dots"></span></div>
     <div class="mrow"><span class="lb">เรียน</span>${T(DOC.apTo)}</div>
     <div class="ind">${T(DOC.apCc)}</div>
     <div class="ind2">-&nbsp;&nbsp;อนุมัติ</div>
@@ -561,27 +569,38 @@ function docCal(ym){
     <tr>${TD.map(t=>`<th>${t}</th>`).join('')}</tr>${rows}</table></div></div>`;
 }
 function docPanel(){
-  const f=(k,lab,w)=>`<label class="f" style="min-width:${w||200}px;flex:1"><span>${lab}</span><input value="${esc(DOC[k])}" onchange="docSet('${k}',this.value)"></label>`;
+  const names=((S.doc&&S.doc.names)||[]);
+  const f=(k,lab,w,list)=>`<label class="f" style="min-width:${w||200}px;flex:1"><span>${lab}</span><input value="${esc(DOC[k])}" ${list?'list="dlNames"':''} onchange="docSet('${k}',this.value)"></label>`;
   return `<div class="card noprint">
-  <div class="row"><b>ข้อมูลในเอกสาร</b><span class="sp"></span><button class="btn" onclick="DOC=Object.assign({},DOCDEF);try{localStorage.removeItem('tp_doc')}catch(e){};vRpt()">คืนค่าเดิม</button></div>
+  <div class="row"><b>ข้อมูลในเอกสาร</b><span class="sp"></span><span class="note">ค่าที่แก้จะบันทึกกลางให้ทุกคนใช้ร่วมกัน · ชื่อที่พิมพ์ใหม่จะถูกเก็บไว้เลือกครั้งหน้า</span></div>
   <div class="row" style="align-items:flex-end;margin-top:6px">
     <label class="f" style="min-width:150px"><span>วันที่หนังสือ</span><input type="date" value="${DOCDATE}" onchange="DOCDATE=this.value;vRpt()"></label>
     ${f('no','เลขที่',120)}${f('from','จาก',140)}${f('to','ถึง',120)}${f('dear','เรียน',150)}</div>
-  <div class="row">${f('signName','ผู้ลงนาม (ชื่อ)')}${f('signPos','ตำแหน่ง')}</div>
+  <datalist id="dlNames">${names.map(x=>`<option value="${esc(x.n)}">${esc(x.pos)}</option>`).join('')}</datalist>
+  <div class="row">${f('signName','ผู้ลงนาม (ชื่อ) — พิมพ์ใหม่หรือเลือกจากที่เคยใช้',0,1)}${f('signPos','ตำแหน่ง')}</div>
   <details><summary class="note" style="cursor:pointer">ส่วนท้าย (ผู้อนุมัติ / สำเนาเรียน / ท้ายหนังสือ)</summary>
   <div class="row">${f('apNo','เลขที่รับ (เว้นว่าง = เขียนมือ)',150)}${f('apTo','เรียน (อนุมัติ)')}</div>
   <div class="row">${f('apCc','สำเนาเรียน')}</div>
-  <div class="row">${f('apName','ผู้อนุมัติ (ชื่อ)')}${f('apPos','ตำแหน่ง')}</div>
+  <div class="row">${f('apName','ผู้อนุมัติ (ชื่อ) — พิมพ์ใหม่หรือเลือกจากที่เคยใช้',0,1)}${f('apPos','ตำแหน่ง')}</div>
   <div class="row">${f('foot1','ท้ายหนังสือ บรรทัด 1',150)}${f('foot2','บรรทัด 2',150)}</div></details>
   <div class="row" style="margin-top:6px">
     <label class="row note"><input type="checkbox" ${DOC.withMemo?'checked':''} onchange="docSet('withMemo',this.checked)"> พิมพ์หน้าบันทึกขออนุมัติ</label>
     <label class="row note"><input type="checkbox" ${DOC.withX?'checked':''} onchange="docSet('withX',this.checked)"> รวมงานนอกแผนระดมทีมในปฏิทิน</label></div>
-  <p class="note">ค่าที่แก้จะจำไว้ในเครื่องนี้ · เมื่อพิมพ์ ให้เลือกกระดาษ A4 แนวตั้ง ระยะขอบ "ไม่มี/ค่าเริ่มต้น"</p></div>`;
+  <p class="note">ฟอนต์ TH Sarabun New ขนาด ๑๖ · ได้ ๒ หน้าเสมอ (ถ้าตารางแน่นเกิน ระบบจะย่อตัวอักษรในตารางลงเท่าที่จำเป็น) · พิมพ์บนกระดาษ A4 แนวตั้ง</p></div>`;
 }
 function docView(ym){
+  docInit();
   return docPanel()+`<div id="docWrap"><div id="printArea">${DOC.withMemo?docMemo(ym):''}${docCal(ym)}</div></div>`;
 }
-function fitDoc(){const w=document.getElementById('docWrap');if(!w)return;const z=Math.min(1,(w.clientWidth-4)/794);document.getElementById('printArea').style.zoom=z}
+function fitDoc(){const w=document.getElementById('docWrap');if(!w)return;const pa=document.getElementById('printArea');
+  pa.style.zoom=1;
+  // ให้ตารางอยู่ในหน้าเดียว: เริ่ม ๑๖ แล้วลดทีละ ๐.๕ จนพอดี
+  const rot=pa.querySelector('.rot'),ct=pa.querySelector('.ct');
+  if(rot&&ct){let fs=16;ct.style.fontSize=fs+'pt';while(rot.scrollHeight>rot.clientHeight+1&&fs>10){fs-=.5;ct.style.fontSize=fs+'pt'}rot.dataset.fs=fs}
+  const memo=pa.querySelector('.memo');if(memo){let fs=16;memo.style.fontSize=fs+'pt';const over=()=>{const e=memo.querySelector('.endorse'),f=memo.querySelector('.foot');return e.getBoundingClientRect().bottom>f.getBoundingClientRect().top-2};while(over()&&fs>14){fs-=.5;memo.style.fontSize=fs+'pt'}memo.dataset.fs=fs}
+  pa.style.zoom=Math.min(1,(w.clientWidth-4)/794)}
+addEventListener('beforeprint',()=>{const pa=document.getElementById('printArea');if(pa)pa.style.zoom=1});
+addEventListener('afterprint',()=>fitDoc());
 
 document.getElementById('mask').onclick=e=>{if(e.target.id==='mask')closeSheet()};
 addEventListener('resize',()=>{clearTimeout(window._r);window._r=setTimeout(render,200)});

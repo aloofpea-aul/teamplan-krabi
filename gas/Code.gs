@@ -118,6 +118,7 @@ function route_(p) {
       case 'editEvent': return editEvent_(u, p);
       case 'addPhoto': return addPhoto_(u, p);
       case 'setUser': return setUser_(u, p);
+      case 'docSave': return docSave_(u, p);
       default: return {ok: false, error: 'unknown action'};
     }
   } finally { if (write) lock.releaseLock(); }
@@ -201,6 +202,7 @@ function state_(u) {
   rows_('Config').filter(r => r.key.startsWith('round:')).forEach(r => out.rounds[r.key.slice(6)] = JSON.parse(r.value));
   out.picks = rows_('Picks').map(p => ({month: p.month, round: Number(p.round), unit: p.unit, dates: String(p.dates).split(',').filter(Boolean), by: p.by, at: p.at}));
   out.swaps = rows_('Swaps').map(s => ({id: s.id, month: s.month, from: s.from, to: s.to, a: s.a, b: s.b, st: s.st, at: s.at}));
+  out.doc = getCfg_('doc', null);
   out.audit = rows_('Audit').slice(-60).reverse().map(a => ({at: a.at, by: a.by, action: a.action, detail: a.detail}));
   if (isCo_(u) || isPlanner_(u)) out.users = rows_('Users').map(x => ({lineId: x.lineId, name: x.name, pic: x.pic, unit: x.unit, role: x.role, status: x.status, lastLogin: x.lastLogin}));
   return out;
@@ -295,6 +297,18 @@ function swapAns_(u, p) {
   audit_(u, 'แลกวัน', s.from + ' ' + s.a + ' ⇄ ' + s.to + ' ' + s.b);
   push_(idsOfUnit_(s.from).concat(idsAdmins_()), '✅ แลกวันสำเร็จ\n' + UNAME[s.from] + ' ได้ ' + thD_(s.b) + ' · ' + UNAME[s.to] + ' ได้ ' + thD_(s.a));
   return {ok: true};
+}
+
+// ================= เอกสารขออนุมัติแผน: จำค่าที่พิมพ์ + ประวัติชื่อผู้ลงนาม/ผู้อนุมัติ =================
+function docSave_(u, p) {
+  if (rank_(u) < 2) throw new Error('ไม่มีสิทธิ์');
+  const keep = ['from','to','no','dear','signName','signPos','apTo','apCc','apName','apPos','foot1','foot2'];
+  const cur = getCfg_('doc', {fields: {}, names: []});
+  keep.forEach(k => { if (p.doc && typeof p.doc[k] === 'string') cur.fields[k] = p.doc[k].slice(0, 200); });
+  const add = (n, pos) => { n = (n || '').trim(); if (!n) return; cur.names = (cur.names || []).filter(x => x.n !== n); cur.names.unshift({n, pos: (pos || '').trim()}); cur.names = cur.names.slice(0, 20); };
+  add(cur.fields.signName, cur.fields.signPos); add(cur.fields.apName, cur.fields.apPos);
+  setCfg_('doc', cur);
+  return {ok: true, doc: cur};
 }
 
 // ================= planner =================

@@ -21,6 +21,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+@font-face{font-family:'THSarabunNew';src:url(fonts/THSarabunNew.woff) format('woff');font-weight:400}
+@font-face{font-family:'THSarabunNew';src:url(fonts/THSarabunNew-Bold.woff) format('woff');font-weight:700}
 :root{
   --pea:#74045f; --pea2:#9b1b83; --bg:#f4f1f5; --card:#fff; --ink:#1f1724; --mute:#6b6274; --line:#e4dde8;
   --hol:#dc2626; --tr:#7c3aed; --mt:#2563eb; --hl:#b45309; --ok:#16a34a; --lock:#cbc4d0;
@@ -135,26 +137,26 @@ td.c,th.c{text-align:center}
 #busy{position:fixed;inset:0;background:rgba(255,255,255,.55);z-index:90;display:none;align-items:center;justify-content:center}
 #busy div{background:#1f1724;color:#fff;padding:10px 18px;border-radius:12px}
 .who span{white-space:nowrap}
-.pg{width:210mm;height:297mm;background:#fff;color:#000;position:relative;box-sizing:border-box;margin:0 auto 12px;box-shadow:0 2px 10px rgba(0,0,0,.18);overflow:hidden;font-family:'Sarabun',sans-serif}
-.memo{padding:12mm 20mm 12mm 30mm;font-size:12.5pt;line-height:1.55}
-.memo .logo{width:36mm;display:block;margin:0 0 2mm -1mm}
-.memo .mrow{display:flex}.memo .c1{width:90mm}.memo .lb{display:inline-block;min-width:14mm}
-.memo .para{text-indent:25mm;margin:1.5mm 0}
-.memo .sign{margin:6mm 0 0 62mm;width:80mm;text-align:center}.memo .sp{height:13mm}
-.memo .endorse{margin-top:12mm}.memo .ind{padding-left:14mm}.memo .ind2{padding-left:18mm}
-.memo .sign2{margin:0 0 0 46mm;width:80mm;text-align:center}.memo .dt{margin-top:3mm}
+.pg{width:210mm;height:297mm;background:#fff;color:#000;position:relative;box-sizing:border-box;margin:0 auto 12px;box-shadow:0 2px 10px rgba(0,0,0,.18);overflow:hidden;font-family:'THSarabunNew',sans-serif}
+.memo{padding:10mm 20mm 8mm 30mm;font-size:16pt;line-height:1.3}
+.memo .logo{width:30mm;display:block;margin:0 0 1mm -1mm}
+.memo .mrow{display:flex}.memo .c1{width:88mm}.memo .lb{display:inline-block;min-width:13mm;flex:none}
+.memo .para{text-indent:25mm;margin:1mm 0}
+.memo .sign{margin:2mm 0 0 55mm;width:100mm;text-align:center}.memo .sp{height:11mm}
+.memo .endorse{margin-top:6mm}.memo .ind{padding-left:14mm}.memo .ind2{padding-left:18mm}
+.memo .sign2{margin:0 0 0 40mm;width:100mm;text-align:center}.memo .dt{margin-top:1mm}
 .memo .dots{display:inline-block;border-bottom:1px dotted #000;width:40mm;height:1em}
-.memo .foot{position:absolute;left:30mm;bottom:12mm;font-size:12pt;line-height:1.4}
+.memo .foot{position:absolute;left:30mm;bottom:8mm;line-height:1.2}
 .land .rot{position:absolute;left:8mm;top:8mm;width:281mm;height:194mm;transform-origin:top left;transform:translate(0,281mm) rotate(-90deg)}
-.land h2{text-align:center;text-decoration:underline;font-size:16pt;margin:0 0 3mm;font-weight:700}
-.ct{width:100%;border-collapse:collapse;table-layout:fixed;font-size:9.5pt;line-height:1.3}
-.ct th{border:1px solid #000;height:7mm;font-weight:600;font-size:11pt}
+.land h2{text-align:center;text-decoration:underline;font-size:20pt;margin:0 0 3mm;font-weight:700}
+.ct{width:100%;border-collapse:collapse;table-layout:fixed;font-size:16pt;line-height:1.05}
+.ct th{border:1px solid #000;height:7mm;font-weight:700;font-size:1em}
 .ct td{border:1px solid #000;vertical-align:top;padding:1mm 1.2mm;position:relative}
 .ct tr.wk td{border-bottom:none}.ct tr.ar td{border-top:none;height:5mm;padding:0 1.5mm;vertical-align:bottom}
-.ct .dn{text-align:right;font-size:11pt;line-height:1}.ct .cc{text-align:center}.ct .blk{margin-top:1.2mm}
-.ct .off{color:#d00;font-weight:600}.ct .hol{color:#d00;font-weight:700;font-size:13pt;margin-top:4mm}
-.ct .hl1{text-align:center;margin-top:2.5mm}
-.arrow{display:flex;flex-direction:column;align-items:center;padding-bottom:1.2mm}.arrow span{font-size:10pt;line-height:1.2}
+.ct .dn{text-align:right;font-size:1em;line-height:1}.ct .cc{text-align:center}.ct .blk{margin-top:.8mm}
+.ct .off{color:#d00;font-weight:700}.ct .hol{color:#d00;font-weight:700;font-size:1.15em;margin-top:3mm}
+.ct .hl1{text-align:center;margin-top:1.5mm}
+.arrow{display:flex;flex-direction:column;align-items:center;padding-bottom:1.2mm}.arrow span{font-size:1em;line-height:1.1}
 .arrow i{display:block;align-self:stretch;height:1px;background:#000;position:relative;margin:0 1mm}
 .arrow i::before,.arrow i::after{content:"";position:absolute;top:-3px;border:3.5px solid transparent}
 .arrow i::before{left:-2px;border-right:6px solid #000;border-left:0}.arrow i::after{right:-2px;border-left:6px solid #000;border-right:0}
@@ -194,6 +196,6 @@ td.c,th.c{text-align:center}
  <p>คุณ <b id="pendName"></b> ส่งคำขอเข้าใช้งานแล้ว<br>เมื่อผู้ดูแลกำหนดหน่วยงานและสิทธิ์ให้ จะเข้าใช้งานได้ทันที</p>
  <button class="btn pri" onclick="reload().catch(e=>toast(e.message))">ตรวจสอบอีกครั้ง</button> <button class="btn" onclick="logout()">ออกจากระบบ</button></div></div>
 <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>
