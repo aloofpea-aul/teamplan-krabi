@@ -482,32 +482,106 @@ function vRpt(){
     </table></div>
     <div class="card"><b>รายการทั้งเดือน</b><table style="margin-top:6px"><tr><th>วันที่</th><th>หน่วยงาน</th><th>งาน</th><th>ทีม/อุปกรณ์</th></tr>
     ${ev.filter(e=>e.type==='O').sort((a,b)=>a.start<b.start?-1:1).map(e=>`<tr><td>${thDate(e.start)}</td><td><b style="color:${U[e.unit]?.c}">${e.unit}.</b></td><td>${esc(e.title)}${e.hl?' ⚡':''}</td><td>${esc(e.crew)}</td></tr>`).join('')}</table></div>`;
-  }else body=paper(ym);
+  }else body=docView(ym);
   document.getElementById('view').innerHTML=`
   <div class="card noprint">${monthNav(RPT,'setRPT')}
-  <div class="row" style="margin-top:8px;justify-content:center"><div class="seg"><button class="${RVIEW==='sum'?'on':''}" onclick="RVIEW='sum';vRpt()">สรุป</button><button class="${RVIEW==='paper'?'on':''}" onclick="RVIEW='paper';vRpt()">แบบฟอร์มพิมพ์</button></div>
+  <div class="row" style="margin-top:8px;justify-content:center"><div class="seg"><button class="${RVIEW==='sum'?'on':''}" onclick="RVIEW='sum';vRpt()">สรุป</button><button class="${RVIEW==='paper'?'on':''}" onclick="RVIEW='paper';vRpt()">เอกสารขออนุมัติแผน</button></div>
   ${RVIEW==='paper'?'<button class="btn pri" onclick="window.print()">🖨 พิมพ์ / บันทึก PDF</button>':''}</div></div>
   ${body}`;
+  if(RVIEW==='paper')fitDoc();
 }
-function paper(ym){
+// ---------- เอกสารขออนุมัติแผนประจำเดือน (หน้า 1 บันทึก + หน้า 2 ปฏิทินแนวนอน) ----------
+const DOCDEF={from:'ผปบ.กฟจ.กระบี่',to:'กฟจ.กระบี่',no:'ต.๒ กบ.(ปบ.)',dear:'ผจก.กฟจ.กระบี่',
+  signName:'นายมนตรี ธรรมประดิษฐ์',signPos:'รจก. รักษาการแทน ผจก.กฟจ.กระบี่',
+  apNo:'',apTo:'ผจก.กฟฟ.ในสังกัด กฟจ.กระบี่',apCc:'รจก., หผ.ปบ., หผ.กส., หผ.มต., จป.(ว.) กฟจ.กระบี่',
+  apName:'นายมนตรี ธรรมประดิษฐ์',apPos:'รจก. รักษาการแทน ผจก.กฟจ.กระบี่',
+  foot1:'ผปบ.กฟจ.กระบี่',foot2:'โทร. ๑๔๕๕๕',withX:false,withMemo:true};
+let DOC=(()=>{try{return Object.assign({},DOCDEF,JSON.parse(localStorage.getItem('tp_doc')||'{}'))}catch(e){return Object.assign({},DOCDEF)}})();
+let DOCDATE=TODAY;
+function docSet(k,v){DOC[k]=v;try{localStorage.setItem('tp_doc',JSON.stringify(DOC))}catch(e){}vRpt()}
+const thFull=s=>{const d=parse(s);return thaiNum(`${d.getUTCDate()} ${TM[d.getUTCMonth()]} ${d.getUTCFullYear()+543}`)};
+const T=s=>esc(thaiNum(s??''));
+function docMemo(ym){
+  const [y,m]=ym.split('-').map(Number);const mon=`${TM[m-1]} ${thaiNum(y+543)}`;
+  return `<div class="pg memo">
+  <img class="logo" src="pea-logo.png" alt="">
+  <div class="mrow"><div class="c1"><span class="lb">จาก</span>${T(DOC.from)}</div><div class="c2"><span class="lb">ถึง</span>${T(DOC.to)}</div></div>
+  <div class="mrow"><div class="c1"><span class="lb">เลขที่</span>${T(DOC.no)}</div><div class="c2"><span class="lb">วันที่</span>${thFull(DOCDATE)}</div></div>
+  <div class="mrow"><span class="lb">เรื่อง</span>ขออนุมัติแผนการปฏิบัติงาน กฟจ.กระบี่และ กฟฟ.ในสังกัด ประจำเดือน${mon}</div>
+  <div class="mrow" style="margin-top:3mm"><span class="lb">เรียน</span>${T(DOC.dear)}</div>
+  <p class="para">ตามที่ ผปบ.กฟจ.กระบี่ ได้รับมอบหมายให้ดูแลรับผิดชอบ ระบบสายส่ง ๑๑๕ KV และระบบจำหน่ายไฟฟ้า ๓๓ KV ในเขตพื้นที่รับผิดชอบของ กฟจ.กระบี่ และ กฟฟ.ในสังกัด นั้น</p>
+  <p class="para">เพื่อให้การปฏิบัติงานด้านบำรุงรักษาระบบไฟฟ้า และงานฮอทไลน์ สามารถดำเนินการสำเร็จลุล่วงตามวัตถุประสงค์ ผ่านเกณฑ์ชี้วัด ผปบ.กฟจ.กระบี่ ได้ดำเนินการจัดทำแผนการปฏิบัติงานประจำเดือน${mon} ตามเอกสารแนบ จำนวน ๑ แผ่น ทั้งนี้หากมีการเปลี่ยนแปลงแผนการปฏิบัติงานดังกล่าว มอบหมายให้ หผ.ปบ.กฟจ.กระบี่ พิจารณาดำเนินการได้ตามความเหมาะสม โดยไม่ต้องขออนุมัติเปลี่ยนแปลงอีก</p>
+  <p class="para">จึงเรียนมาเพื่อโปรดพิจารณาอนุมัติ และแจ้งส่วนที่เกี่ยวข้องดำเนินการต่อไป</p>
+  <div class="sign"><div class="sp"></div>(${T(DOC.signName)})<br>${T(DOC.signPos)}</div>
+  <div class="endorse">
+    <div>ที่ ${T(DOC.no)} ${DOC.apNo?T(DOC.apNo):'<span class="dots"></span>'}</div>
+    <div class="mrow"><span class="lb">เรียน</span>${T(DOC.apTo)}</div>
+    <div class="ind">${T(DOC.apCc)}</div>
+    <div class="ind2">-&nbsp;&nbsp;อนุมัติ</div>
+    <div class="ind2">-&nbsp;&nbsp;เพื่อทราบและแจ้งส่วนที่เกี่ยวข้องดำเนินการต่อไป</div>
+    <div class="sign2"><div class="sp"></div>(${T(DOC.apName)})<br>${T(DOC.apPos)}<div class="dt"><span class="dots" style="width:32mm"></span></div></div>
+  </div>
+  <div class="foot">${T(DOC.foot1)}<br>${T(DOC.foot2)}</div>
+  </div>`;
+}
+function docCal(ym){
   const [y,m]=ym.split('-').map(Number);const days=monthDays(ym);const first=dow(days[0]);
   const cells=[];for(let i=0;i<first;i++)cells.push('');days.forEach(d=>cells.push(d));while(cells.length%7)cells.push('');
+  const keep=e=>e.type!=='P'&&(DOC.withX||e.type!=='W');
+  const multiL=EV.filter(e=>e.type==='L'&&e.start!==e.end&&e.end>=days[0]&&e.start<=days[days.length-1]);
+  const nWeeks=cells.length/7;const cellH=Math.floor((166-nWeeks*5)/nWeeks);
   let rows='';
-  for(let r=0;r<cells.length;r+=7){rows+='<tr>'+cells.slice(r,r+7).map(d=>{
-    if(!d)return'<td></td>';
-    const ev=evOn(d);let h=`<div class="pn">${thaiNum(+d.slice(8))}</div>`;
-    ev.filter(e=>e.type!=='L'&&e.type!=='P').forEach(e=>{
-      if(e.type==='H')h+=`<div class="red" style="font-size:15px">${esc(e.title)}</div>`;
-      else if(e.type==='O')h+=`<div><span class="red">ดับไฟ</span> ${e.unit==='ผกส'||e.unit==='ผปบ'?e.unit+'.':'กฟส.'+e.unit+'.'}<br>${esc(e.title)}<br>${esc(e.crew)}</div>`;
-      else h+=`<div>${esc(e.title)}${e.crew?'<br>'+esc(e.crew):''}</div>`;
-    });
-    const hl=ev.filter(e=>e.type==='L');
-    if(!ev.filter(e=>e.type!=='L'&&e.type!=='P').length&&![0,6].includes(dow(d)))h+='<div style="margin-top:10px">ตามภาระหน้าที่</div>';
-    if(hl.length)h+=`<div class="hl">กบ.๐๖ ${hl[0].title.startsWith('ช่วยงาน')?'':'ไป '}${esc(thaiNum(hl[0].title))}</div>`;
-    return`<td>${h}</td>`}).join('')+'</tr>'}
-  return `<div class="paper" style="overflow:auto"><h2>แผนงาน กฟจ.กระบี่ ประจำเดือน${TM[m-1]} ${thaiNum(y+543)}</h2>
-  <table class="ptable"><tr>${TD.map(t=>`<th>${t}</th>`).join('')}</tr>${rows}</table></div>`;
+  for(let r=0;r<cells.length;r+=7){
+    const wk=cells.slice(r,r+7);
+    rows+='<tr class="wk">'+wk.map(d=>{
+      if(!d)return`<td style="height:${cellH}mm"></td>`;
+      const ev=evOn(d).filter(keep);let h=`<div class="dn">${thaiNum(+d.slice(8))}</div><div class="cc">`;
+      ev.filter(e=>e.type!=='L').forEach(e=>{
+        if(e.type==='H')h+=`<div class="hol">${T(e.title)}</div>`;
+        else if(e.type==='O')h+=`<div class="blk"><span class="off">ดับไฟ</span> ${T(e.unit)}.<br>${T(e.title)}${e.crew?'<br>'+T(e.crew):''}</div>`;
+        else h+=`<div class="blk">${T(e.title)}${e.crew?'<br>'+T(e.crew):''}</div>`;
+      });
+      if(!ev.filter(e=>e.type!=='L').length&&![0,6].includes(dow(d)))h+=`<div class="blk">ตามภาระหน้าที่</div>`;
+      h+='</div>';
+      const l1=ev.filter(e=>e.type==='L'&&e.start===e.end);
+      if(l1.length)h+=`<div class="hl1">${l1.map(l=>'กบ.๐๖ '+(l.title.startsWith('ช่วยงาน')?'':'ไป ')+T(l.title)).join('<br>')}</div>`;
+      return`<td style="height:${cellH}mm">${h}</td>`}).join('')+'</tr>';
+    // แถวลูกศร กบ.06 หลายวัน
+    const spans=[];
+    multiL.forEach(e=>{const idx=wk.map((d,i)=>d&&d>=e.start&&d<=e.end?i:-1).filter(i=>i>=0);if(idx.length)spans.push({a:idx[0],b:idx[idx.length-1],t:e.title})});
+    let ar='<tr class="ar">';let c=0;
+    spans.sort((p,q)=>p.a-q.a).forEach(s=>{if(s.a<c)return;if(s.a>c)ar+=`<td colspan="${s.a-c}"></td>`;
+      ar+=`<td colspan="${s.b-s.a+1}"><div class="arrow"><span>กบ.๐๖ ${s.t.startsWith('ช่วยงาน')?'':'ไป '}${T(s.t)}</span><i></i></div></td>`;c=s.b+1});
+    if(c<7)ar+=`<td colspan="${7-c}"></td>`;
+    rows+=ar+'</tr>';
+  }
+  return `<div class="pg land"><div class="rot">
+    <h2>แผนงาน กฟจ.กระบี่ ประจำเดือน${TM[m-1]} ${thaiNum(y+543)}</h2>
+    <table class="ct"><colgroup><col style="width:8.5%">${'<col style="width:16.6%">'.repeat(5)}<col style="width:8.5%"></colgroup>
+    <tr>${TD.map(t=>`<th>${t}</th>`).join('')}</tr>${rows}</table></div></div>`;
 }
+function docPanel(){
+  const f=(k,lab,w)=>`<label class="f" style="min-width:${w||200}px;flex:1"><span>${lab}</span><input value="${esc(DOC[k])}" onchange="docSet('${k}',this.value)"></label>`;
+  return `<div class="card noprint">
+  <div class="row"><b>ข้อมูลในเอกสาร</b><span class="sp"></span><button class="btn" onclick="DOC=Object.assign({},DOCDEF);try{localStorage.removeItem('tp_doc')}catch(e){};vRpt()">คืนค่าเดิม</button></div>
+  <div class="row" style="align-items:flex-end;margin-top:6px">
+    <label class="f" style="min-width:150px"><span>วันที่หนังสือ</span><input type="date" value="${DOCDATE}" onchange="DOCDATE=this.value;vRpt()"></label>
+    ${f('no','เลขที่',120)}${f('from','จาก',140)}${f('to','ถึง',120)}${f('dear','เรียน',150)}</div>
+  <div class="row">${f('signName','ผู้ลงนาม (ชื่อ)')}${f('signPos','ตำแหน่ง')}</div>
+  <details><summary class="note" style="cursor:pointer">ส่วนท้าย (ผู้อนุมัติ / สำเนาเรียน / ท้ายหนังสือ)</summary>
+  <div class="row">${f('apNo','เลขที่รับ (เว้นว่าง = เขียนมือ)',150)}${f('apTo','เรียน (อนุมัติ)')}</div>
+  <div class="row">${f('apCc','สำเนาเรียน')}</div>
+  <div class="row">${f('apName','ผู้อนุมัติ (ชื่อ)')}${f('apPos','ตำแหน่ง')}</div>
+  <div class="row">${f('foot1','ท้ายหนังสือ บรรทัด 1',150)}${f('foot2','บรรทัด 2',150)}</div></details>
+  <div class="row" style="margin-top:6px">
+    <label class="row note"><input type="checkbox" ${DOC.withMemo?'checked':''} onchange="docSet('withMemo',this.checked)"> พิมพ์หน้าบันทึกขออนุมัติ</label>
+    <label class="row note"><input type="checkbox" ${DOC.withX?'checked':''} onchange="docSet('withX',this.checked)"> รวมงานนอกแผนระดมทีมในปฏิทิน</label></div>
+  <p class="note">ค่าที่แก้จะจำไว้ในเครื่องนี้ · เมื่อพิมพ์ ให้เลือกกระดาษ A4 แนวตั้ง ระยะขอบ "ไม่มี/ค่าเริ่มต้น"</p></div>`;
+}
+function docView(ym){
+  return docPanel()+`<div id="docWrap"><div id="printArea">${DOC.withMemo?docMemo(ym):''}${docCal(ym)}</div></div>`;
+}
+function fitDoc(){const w=document.getElementById('docWrap');if(!w)return;const z=Math.min(1,(w.clientWidth-4)/794);document.getElementById('printArea').style.zoom=z}
 
 document.getElementById('mask').onclick=e=>{if(e.target.id==='mask')closeSheet()};
 addEventListener('resize',()=>{clearTimeout(window._r);window._r=setTimeout(render,200)});
