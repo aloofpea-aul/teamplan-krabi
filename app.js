@@ -13,8 +13,8 @@ const UNITS=[
 ];
 const U=Object.fromEntries(UNITS.map(u=>[u.id,u]));
 const FIXED=2;
-const ROLES={admin:'👑 แอดมินระบบ',coadmin:'🛡 โคแอดมิน',planner:'ผู้กำหนด',picker:'ผู้เลือกวัน',viewer:'ดูอย่างเดียว'};
-const RANK={viewer:1,picker:2,planner:3,coadmin:4,admin:5};
+const ROLES={admin:'👑 แอดมินระบบ',coadmin:'🛡 โคแอดมิน',planner:'ผู้กำหนด',picker:'ผู้เลือกวัน',lead:'ผู้ลงแผนหน่วย',viewer:'ดูอย่างเดียว'};
+const RANK={viewer:1,lead:1.5,picker:2,planner:3,coadmin:4,admin:5};
 const TM=['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
 const TMS=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 const TD=['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
@@ -141,13 +141,13 @@ function boot(){
   render();
 }
 function renderNav(){
-  const tabs=[['cal','📅','ปฏิทิน'],['book','✋','เลือกวัน'],['ana','📈','วิเคราะห์'],['rpt','🖨','รายงาน']];
+  const tabs=[['cal','📅','ปฏิทิน'],['up','📋','แผนหน่วย'],['book','✋','เลือกวัน'],['ana','📈','วิเคราะห์'],['rpt','🖨','รายงาน']];
   if(isPlanner())tabs.push(['set','⚙️',isCo()?'แอดมิน':'กำหนดเงื่อนไข']);
   if(!tabs.find(t=>t[0]===TAB))TAB='cal';
   document.getElementById('nav').innerHTML=tabs.map(([k,i,t])=>`<button class="${TAB===k?'on':''}" onclick="go('${k}')"><span class="ic">${i}</span>${t}</button>`).join('');
 }
 function go(t){TAB=t;render();document.querySelector('main').scrollTop=0}
-function render(){if(!S||S.me.status!=='approved')return;renderNav();({cal:vCal,book:vBook,rpt:vRpt,set:vSet,ana:vAna})[TAB]()}
+function render(){if(!S||S.me.status!=='approved')return;renderNav();({cal:vCal,up:vUp,book:vBook,rpt:vRpt,set:vSet,ana:vAna})[TAB]()}
 
 // ---------- helpers ----------
 function evOn(date){return EV.filter(e=>date>=e.start&&date<=e.end)}
@@ -194,20 +194,23 @@ function dayCell(d,extraCls='',extra=''){
   const order={H:0,O:1,W:2,P:3,T:4,M:5,L:6};
   const sorted=[...ev].sort((a,b)=>order[a.type]-order[b.type]);
   const hl=ev.find(e=>e.type==='L');
-  return `<div class="d ${w?'we':''} ${hol?'hol':''} ${d===TODAY?'today':''} ${extraCls}" onclick="dayClick('${d}')"><div class="num">${+d.slice(8)}</div>${sorted.map(evHtml).join('')}${hl?'<span class="hlDot">⚡06</span>':''}${extra}</div>`;
+  const ups=SHOWUP&&S?upOn(d):[];
+  return `<div class="d ${w?'we':''} ${hol?'hol':''} ${d===TODAY?'today':''} ${extraCls}" onclick="dayClick('${d}')"><div class="num">${+d.slice(8)}</div>${sorted.map(evHtml).join('')}${ups.map(x=>upChip(x,d)).join('')}${hl?'<span class="hlDot">⚡06</span>':''}${extra}</div>`;
 }
 function monthNav(cur,setter){
   const [y,m]=cur.split('-').map(Number);
   return `<div class="row"><button class="btn" onclick="${setter}('${prevMonth(cur)}')">‹</button><div class="mtitle">${TM[m-1]} ${y+543}</div><button class="btn" onclick="${setter}('${nextMonth(cur)}')">›</button></div>`;
 }
-const legend=()=>`<div class="legend">${UNITS.map(u=>`<span><i style="background:${u.c}"></i>${u.id}.</span>`).join('')}<span><i style="background:var(--hol)"></i>วันหยุด PEA</span><span><i style="background:var(--tr)"></i>อบรมทักษะ</span><span><i style="background:var(--mt)"></i>ประชุม</span><span><i style="background:var(--hl)"></i>ฮอตไลน์ กบ.06</span></div>`;
+const legend=()=>`<div class="legend">${UNITS.map(u=>`<span><i style="background:${u.c}"></i>${u.id}.</span>`).join('')}<span><i style="background:var(--hol)"></i>วันหยุด PEA</span><span><i style="background:var(--tr)"></i>อบรมทักษะ</span><span><i style="background:var(--mt)"></i>ประชุม</span><span><i style="background:var(--hl)"></i>ฮอตไลน์ กบ.06</span><span><i style="background:transparent;border:1px dashed #6b6274"></i>แผนหน่วย (เส้นประ)</span></div>`;
 
 // ---------- view: calendar ----------
 function setCM(m){CM=m;vCal()}
 function vCal(){
   document.getElementById('view').innerHTML=`
   <div class="card">${monthNav(CM,'setCM')}${legend()}
-  <label class="note" style="margin-top:8px;display:flex;gap:8px;align-items:flex-start;cursor:pointer"><input type="checkbox" style="flex:none;width:18px;height:18px;margin:2px 0 0" ${SHOWX?'checked':''} onchange="SHOWX=this.checked;vCal()"><span>แสดงงานนอกแผนระดมทีม (งานที่แต่ละหน่วยจัดเอง — ไม่นับในระบบ)</span></label></div>
+  <label class="note" style="margin-top:8px;display:flex;gap:8px;align-items:flex-start;cursor:pointer"><input type="checkbox" style="flex:none;width:18px;height:18px;margin:2px 0 0" ${SHOWX?'checked':''} onchange="SHOWX=this.checked;vCal()"><span>แสดงงานนอกแผนระดมทีม (งานที่แต่ละหน่วยจัดเอง — ไม่นับในระบบ)</span></label>
+  <div class="row" style="margin-top:6px"><label class="note" style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" style="flex:none;width:18px;height:18px;margin:0" ${SHOWUP?'checked':''} onchange="SHOWUP=this.checked;vCal()"><span>แสดงแผนหน่วย${seeAllUp()?'':' '+esc(S.me.unit)+'.'}</span></label>
+  ${seeAllUp()&&SHOWUP?`<select onchange="UPU=this.value;vCal()"><option value="">ทุกหน่วย</option>${UNITS.map(u=>`<option value="${u.id}" ${u.id===UPU?'selected':''}>${u.name}</option>`).join('')}</select>`:''}</div></div>
   ${calGrid(CM,d=>dayCell(d))}
   <p class="note">แตะวันที่เพื่อดูรายละเอียด และแนบรูปหน้างาน</p>`;
 }
@@ -215,7 +218,7 @@ function dayClick(d){
   if(TAB==='book')return bookClick(d);
   const ev=evOn(d).filter(e=>SHOWX||!'WP'.includes(e.type));
   let h=`<div class="row"><h3 class="sp">${thDate(d)}</h3><button class="btn ghost" onclick="closeSheet()">✕</button></div>`;
-  if(!ev.length)h+=`<p class="note">ไม่มีรายการ — ตามภาระหน้าที่</p>`;
+  if(!ev.length&&!upOn(d).length)h+=`<p class="note">ไม่มีรายการ — ตามภาระหน้าที่</p>`;
   ev.forEach(e=>{
     const u=U[e.unit];const mine=(e.type==='O'&&e.unit===S.me.unit&&rank()>=2)||isPlanner();
     const canDel=e.type==='O'?isCo():isPlanner();
@@ -232,6 +235,9 @@ function dayClick(d){
       ${canDel?`<button class="btn" onclick="delEv('${e.id}')">🗑 ลบ</button>`:''}</div>
     </div>`;
   });
+  const ups=upOn(d);
+  ups.forEach(x=>{const cf=upConflict(x,d);h+=`<div class="card" style="border:1px dashed ${U[x.unit]?.c||'#999'};cursor:pointer" onclick="upEdit('${x.id}')"><div class="row"><span class="chip" style="background:#E1F5EE;color:#085041">แผนหน่วย ${esc(x.unit)}.</span><span class="note">${esc(x.kind)} · ${esc(x.status)}</span></div><div style="margin-top:6px">${esc(x.title)}</div>${x.crew?`<div class="note">ทีม: ${esc(x.crew)}</div>`:''}${cf?`<div class="note" style="color:#993C1D">⚠ ชนวันระดมทีม ${esc(cf.unit)}. ที่ขอ ${esc(cf.crew)}</div>`:''}</div>`});
+  if(canUp(S.me.unit))h+=`<div class="row" style="margin-bottom:8px"><button class="btn" onclick="closeSheet();UPM='${d.slice(0,7)}';upEdit('','${d}')">+ งานในแผนหน่วย ${esc(S.me.unit)}.</button></div>`;
   if(isPlanner())h+=`<div class="row"><button class="btn" onclick="adminAdd('${d}','T')">+ วันอบรม</button><button class="btn" onclick="adminAdd('${d}','M')">+ วันประชุม</button><button class="btn" onclick="adminAdd('${d}','H')">+ วันหยุด</button><button class="btn" onclick="adminAdd('${d}','L')">+ กบ.06 ไปนอกพื้นที่</button><button class="btn" onclick="adminAdd('${d}','W')">+ งานนอกแผน</button></div>`;
   openSheet(h);
 }
@@ -296,6 +302,7 @@ function vBook(){
     const cls=sel?'sel':why?(done&&booked?'':'lk'):(myTurn?'av':'');
     return dayCell(d,cls,why&&!sel&&!(done&&booked)?`<div class="why">🔒 ${esc(why)}</div>`:'');
   })}
+  ${myTurn&&upMobPending(ME).length?`<div class="card"><b>📋 งานในแผนหน่วย ${ME}. ที่ขอระดมทีม (ยังไม่ได้วัน)</b>${upMobPending(ME).map(x=>`<div class="note" style="margin-top:4px">• ${esc(x.title)} — อยากได้ประมาณ ${thDate(x.start)}${x.crew?' · '+esc(x.crew):''}</div>`).join('')}<div class="note" style="margin-top:6px">แตะวันว่างในปฏิทิน แล้วเลือกงานจากรายการนี้ได้เลย</div></div>`:''}
   ${myTurn?`<div class="card" style="margin-top:12px">
     ${PICK.length?PICK.map((p,i)=>`<div class="row" style="border-bottom:1px solid var(--line);padding:6px 0"><b>${thDate(p.date)}</b><span>${esc(p.title)}</span><span class="note">${esc(p.crew)}</span>${p.hl?'⚡ฮอตไลน์':''}${p.photos.length?' 📷'+p.photos.length:''}<span class="sp"></span><button class="btn" onclick="PICK.splice(${i},1);vBook()">ลบ</button></div>`).join(''):'<span class="note">แตะวันสีเขียวเพื่อเลือก</span>'}
     <div class="row" style="margin-top:10px"><span class="sp"></span><button class="btn ok" ${PICK.length===quota?'':'disabled'} onclick="confirmPick()">ยืนยัน ${PICK.length}/${quota} วัน → ส่งคิวถัดไป</button></div>
@@ -311,7 +318,9 @@ function bookClick(d){
   const quota=c.perRound[ME]||1;if(PICK.length>=quota)return toast('รอบนี้เลือกได้ '+quota+' วัน');
   const hlLeft=(c.hlQuota[ME]||0)-hlUsed(ME,S.active)-PICK.filter(p=>p.hl).length;
   const hb=hlBusy(d);const hlOk=hlLeft>0&&!hb.length;
+  const pend=upMobPending(ME);
   openSheet(`<div class="row"><h3 class="sp">จองดับไฟ ${thDate(d)}</h3><button class="btn ghost" onclick="closeSheet()">✕</button></div>
+  ${pend.length?`<div class="f"><label>เลือกจากแผนหน่วย (งานที่ขอระดมทีม)</label><select id="bU" onchange="const x=UP().find(z=>z.id===this.value);document.getElementById('bT').value=x?x.title:'';if(x&&x.crew){const s=document.getElementById('bC');if(![...s.options].some(o=>o.text===x.crew))s.add(new Option(x.crew));s.value=x.crew}"><option value="">— พิมพ์งานใหม่ —</option>${pend.map(x=>`<option value="${x.id}">${esc(x.title)} (${+x.start.slice(8)} ${TMS[+x.start.slice(5,7)-1]})</option>`).join('')}</select></div>`:''}
   <div class="f"><label>งาน / สถานที่</label><input id="bT" placeholder="เช่น ปป.บ้านบากัน, ย้ายแนว..."></div>
   <div class="f"><label>ฟีดเดอร์ / ช่วงเวลาดับไฟ</label><input id="bF" placeholder="เช่น F3 08.30–16.00 น."></div>
   <div class="f"><label>ขอทีม / อุปกรณ์</label><select id="bC"><option>ทุกทีม+กระเช้าติดเครน</option><option>ทุกทีม+กระเช้าติดรถ</option><option>ทุกทีม+กระเช้า</option><option>กระเช้า07 ทุกสาขา</option><option>ทีมซ่อมย่อย+กระเช้า07</option><option>ทุกทีม</option></select></div>
@@ -321,7 +330,7 @@ function bookClick(d){
 }
 async function savePick(d){
   const t=document.getElementById('bT').value.trim()||'(ยังไม่ระบุงาน)';const f=document.getElementById('bF').value.trim();
-  const p={date:d,title:t+(f?' '+f:''),crew:document.getElementById('bC').value,hl:document.getElementById('bH').checked,photos:await filesToData(document.getElementById('bP'))};
+  const p={date:d,title:t+(f?' '+f:''),crew:document.getElementById('bC').value,hl:document.getElementById('bH').checked,photos:await filesToData(document.getElementById('bP')),upId:document.getElementById('bU')?.value||''};
   PICK.push(p);closeSheet();vBook();
 }
 async function confirmPick(){
@@ -402,7 +411,7 @@ function usersCard(){
   ${users.map(x=>{const lock=!co||(x.role==='admin'&&!adm);const k=x.lineId;
    return `<tr><td>${x.pic?`<img src="${esc(x.pic)}" style="width:26px;height:26px;border-radius:50%;vertical-align:middle;margin-right:6px">`:''}${esc(x.name)}</td>
    <td><select id="u_${k}" ${lock?'disabled':''}><option value="">— เลือก —</option>${UNITS.map(u=>`<option value="${u.id}" ${x.unit===u.id?'selected':''}>${u.name}</option>`).join('')}</select></td>
-   <td><select id="r_${k}" ${lock?'disabled':''}>${['','admin','coadmin','planner','picker','viewer'].map(r=>`<option value="${r}" ${x.role===r?'selected':''} ${(r==='admin'||r==='coadmin')&&!adm?'disabled':''}>${ROLES[r]||'— เลือก —'}</option>`).join('')}</select></td>
+   <td><select id="r_${k}" ${lock?'disabled':''}>${['','admin','coadmin','planner','picker','lead','viewer'].map(r=>`<option value="${r}" ${x.role===r?'selected':''} ${(r==='admin'||r==='coadmin')&&!adm?'disabled':''}>${ROLES[r]||'— เลือก —'}</option>`).join('')}</select></td>
    <td><select id="s_${k}" ${lock?'disabled':''}>${[['pending','รออนุมัติ'],['approved','อนุมัติ'],['blocked','ระงับ']].map(([v,t])=>`<option value="${v}" ${x.status===v?'selected':''}>${t}</option>`).join('')}</select></td>
    <td>${lock?'':`<button class="btn ${x.status==='pending'?'ok':''}" onclick="saveUser('${k}')">${x.status==='pending'?'อนุมัติ':'บันทึก'}</button>`}</td></tr>`}).join('')}
   </table>
@@ -482,14 +491,92 @@ function vRpt(){
     </table></div>
     <div class="card"><b>รายการทั้งเดือน</b><table style="margin-top:6px"><tr><th>วันที่</th><th>หน่วยงาน</th><th>งาน</th><th>ทีม/อุปกรณ์</th></tr>
     ${ev.filter(e=>e.type==='O').sort((a,b)=>a.start<b.start?-1:1).map(e=>`<tr><td>${thDate(e.start)}</td><td><b style="color:${U[e.unit]?.c}">${e.unit}.</b></td><td>${esc(e.title)}${e.hl?' ⚡':''}</td><td>${esc(e.crew)}</td></tr>`).join('')}</table></div>`;
-  }else body=docView(ym);
+  }else if(RVIEW==='unit')body=upPrint(ym);else body=docView(ym);
   document.getElementById('view').innerHTML=`
   <div class="card noprint">${monthNav(RPT,'setRPT')}
-  <div class="row" style="margin-top:8px;justify-content:center"><div class="seg"><button class="${RVIEW==='sum'?'on':''}" onclick="RVIEW='sum';vRpt()">สรุป</button><button class="${RVIEW==='paper'?'on':''}" onclick="RVIEW='paper';vRpt()">เอกสารขออนุมัติแผน</button></div>
-  ${RVIEW==='paper'?'<button class="btn pri" onclick="window.print()">🖨 พิมพ์ / บันทึก PDF</button>':''}</div></div>
+  <div class="row" style="margin-top:8px;justify-content:center"><div class="seg"><button class="${RVIEW==='sum'?'on':''}" onclick="RVIEW='sum';vRpt()">สรุป</button><button class="${RVIEW==='paper'?'on':''}" onclick="RVIEW='paper';vRpt()">ขออนุมัติแผน</button><button class="${RVIEW==='unit'?'on':''}" onclick="RVIEW='unit';vRpt()">แผนหน่วย</button></div>
+  ${RVIEW!=='sum'?'<button class="btn pri" onclick="window.print()">🖨 พิมพ์ / บันทึก PDF</button>':''}</div></div>
   ${body}`;
-  if(RVIEW==='paper'){fitDoc();try{document.fonts.ready.then(fitDoc)}catch(e){}}
+  if(RVIEW!=='sum'){fitDoc();try{document.fonts.ready.then(fitDoc)}catch(e){}}
 }
+// ---------- แผนหน่วย (งานภายในของแต่ละหน่วย) ----------
+const UP_KINDS=['ปรับปรุงระบบ / ย้ายแนว','PM / ซ่อมบำรุง','ตัดต้นไม้','ตรวจระบบ (Patrol)','อบรม / ประชุมภายใน','อื่น ๆ'];
+const UP_ST={'แผน':['var(--surface-1)','#6b6274'],'ทำแล้ว':['#EAF3DE','#27500A'],'เลื่อน':['#FAEEDA','#633806'],'ยกเลิก':['#FCEBEB','#791F1F']};
+let SHOWUP=true;let UPM=TODAY.slice(0,7);let UPU='';
+const UP=()=>(S&&S.unitPlans)||[];
+const canUp=unit=>(unit===S.me.unit&&rank()>=1.5)||isCo();
+const seeAllUp=()=>isPlanner();
+function upOn(d){return UP().filter(x=>d>=x.start&&d<=x.end&&!x.outId&&(seeAllUp()?(!UPU||UPU===x.unit):x.unit===S.me.unit))}
+function upConflict(x,d){
+  if(x.status==='ทำแล้ว'||x.status==='ยกเลิก')return null;
+  const nm=U[x.unit];return EV.find(e=>e.type==='O'&&e.unit!==x.unit&&e.start===d&&/ทุกทีม|ทุกสาขา|ทุก กฟส/.test(e.crew||'')&&!new RegExp('ยกเว้น[^\\n]*'+x.unit).test(e.crew||''))||null;
+}
+function upChip(x,d){
+  const u=U[x.unit]||{c:'#666'};const cf=upConflict(x,d);
+  return `<div class="ev up" style="border-color:${cf?'#D85A30':u.c};color:${cf?'#993C1D':u.c}">${cf?'⚠ ':''}${seeAllUp()&&!UPU?'<b>'+esc(x.unit)+'.</b> ':''}<span class="long">${esc(x.title)}</span>${innerWidth<=700?'แผนหน่วย':''}</div>`;
+}
+function upMine(){return seeAllUp()?(UPU||S.me.unit||UNITS[0].id):S.me.unit}
+function setUPM(m){UPM=m;vUp()}
+function vUp(){
+  const unit=upMine();const [y,m]=UPM.split('-').map(Number);
+  const list=UP().filter(x=>x.unit===unit&&x.start<=monthDays(UPM).slice(-1)[0]&&x.end>=UPM+'-01').sort((a,b)=>a.start<b.start?-1:1);
+  const cnt=k=>list.filter(x=>x.status===k).length;const mob=list.filter(x=>x.mob);
+  const can=canUp(unit);
+  document.getElementById('view').innerHTML=`
+  <div class="card">${monthNav(UPM,'setUPM')}
+   <div class="row" style="margin-top:8px"><b style="color:${U[unit]?.c}">แผนหน่วย ${U[unit]?.name||unit}</b><span class="sp"></span>
+   ${seeAllUp()?`<select onchange="UPU=this.value;vUp()">${UNITS.map(u=>`<option value="${u.id}" ${u.id===unit?'selected':''}>${u.name}</option>`).join('')}</select>`:''}</div>
+   <div class="note" style="margin-top:4px">${list.length} งาน · ขอระดมทีม ${mob.length} · ทำแล้ว ${cnt('ทำแล้ว')} · เลื่อน ${cnt('เลื่อน')} · ยกเลิก ${cnt('ยกเลิก')}</div>
+   ${can?`<button class="btn pri" style="margin-top:8px" onclick="upEdit('',null)">+ เพิ่มงานในแผนหน่วย</button>`:'<div class="note" style="margin-top:6px">ดูอย่างเดียว</div>'}</div>
+  <div class="card" style="padding:0">${list.length?list.map(x=>{const st=UP_ST[x.status]||UP_ST['แผน'];const o=x.outId&&EV.find(e=>e.id===x.outId);const cf=!x.outId&&upConflict(x,x.start);
+    return `<div class="row" style="padding:10px 12px;border-bottom:1px solid var(--line);flex-wrap:nowrap;cursor:pointer" onclick="upEdit('${x.id}')">
+    <div style="min-width:54px;font-weight:600">${TDS[dow(x.start)]} ${+x.start.slice(8)}${x.end!==x.start?'–'+(+x.end.slice(8)):''}</div>
+    <div style="flex:1;min-width:0"><div style="white-space:normal">${esc(x.title)}</div><div class="note">${esc(x.kind)}${x.crew?' · '+esc(x.crew):''}${x.photos.length?' · 📷'+x.photos.length:''}</div>
+    ${cf?`<div class="note" style="color:#993C1D">⚠ ชนวันระดมทีม ${esc(cf.unit)}. (${esc(cf.crew)})</div>`:''}</div>
+    <div style="display:flex;flex-direction:column;gap:3px;align-items:flex-end">
+    <span class="chip" style="background:${st[0]};color:${st[1]}">${esc(x.status)}</span>
+    ${o?`<span class="chip" style="background:#EEEDFE;color:#3C3489">ระดมทีม ${+o.start.slice(8)} ${TMS[+o.start.slice(5,7)-1]}</span>`:x.mob?'<span class="chip" style="background:#FAEEDA;color:#633806">รอเลือกวัน</span>':''}</div></div>`}).join(''):'<p class="note" style="padding:12px">ยังไม่มีงานในเดือนนี้</p>'}</div>
+  <p class="note">งานที่เปิด “ขอเป็นงานระดมทีม” จะขึ้นให้เลือกตอนถึงคิวเลือกวันของหน่วย · ได้วันแล้วจะผูกกับแผนรวมอัตโนมัติ</p>`;
+}
+function upEdit(id,dDefault){
+  const x=id?UP().find(z=>z.id===id):{start:dDefault||(UPM===TODAY.slice(0,7)?TODAY:UPM+'-01'),end:'',kind:UP_KINDS[0],title:'',crew:'',status:'แผน',mob:false,note:'',photos:[],unit:upMine()};
+  if(!x)return;const can=canUp(x.unit);const linked=!!x.outId;const o=linked&&EV.find(e=>e.id===x.outId);const dis=can?'':'disabled';
+  openSheet(`<div class="row"><h3 class="sp">${id?'งานในแผนหน่วย':'เพิ่มงานในแผนหน่วย'} · ${esc(U[x.unit]?.name||'')}</h3><button class="btn ghost" onclick="closeSheet()">✕</button></div>
+  ${linked?`<div class="banner turn" style="font-weight:400">ได้วันระดมทีมแล้ว: <b>${thDate(o?o.start:x.start)}</b> — วันที่ผูกกับแผนรวม (เปลี่ยนผ่านการแลกวัน)</div>`:''}
+  <div class="row"><div class="f" style="flex:1"><label>วันที่</label><input type="date" id="uS" value="${x.start}" ${linked||!can?'disabled':''}></div>
+  <div class="f" style="flex:1"><label>ถึงวันที่ (ถ้าหลายวัน)</label><input type="date" id="uE" value="${x.end&&x.end!==x.start?x.end:''}" ${linked||!can?'disabled':''}></div></div>
+  <div class="f"><label>ประเภทงาน</label><select id="uK" ${dis}>${UP_KINDS.map(k=>`<option ${k===x.kind?'selected':''}>${k}</option>`).join('')}</select></div>
+  <div class="f"><label>งาน / สถานที่ / ฟีดเดอร์</label><input id="uT" value="${esc(x.title)}" placeholder="เช่น PM หม้อแปลง 3 จุด F3" ${dis}></div>
+  <div class="f"><label>ทีม / อุปกรณ์ที่ใช้</label><input id="uC" value="${esc(x.crew)}" placeholder="เช่น ทีมปฏิบัติการ อล. + กระเช้า" ${dis}></div>
+  <div class="f"><label>หมายเหตุ</label><input id="uN" value="${esc(x.note)}" ${dis}></div>
+  ${id?`<div class="f"><label>สถานะ</label><div class="seg">${Object.keys(UP_ST).map(k=>`<button type="button" class="${k===x.status?'on':''}" ${dis} onclick="this.parentNode.querySelectorAll('button').forEach(b=>b.classList.remove('on'));this.classList.add('on')">${k}</button>`).join('')}</div></div>`:''}
+  <label class="row" style="background:#E1F5EE;color:#085041;border-radius:10px;padding:8px 10px;margin-bottom:10px;flex-wrap:nowrap"><input type="checkbox" id="uM" ${x.mob?'checked':''} ${linked||!can?'disabled':''} style="flex:none;width:18px;height:18px"><span><b>ขอเป็นงานระดมทีม</b><br><span style="font-size:12px">ต้องใช้ทีมหน่วยอื่นช่วย → ไปรอในคิวเลือกวัน</span></span></label>
+  ${x.photos.length?`<div class="thumbs" style="margin-bottom:8px">${x.photos.map(p=>`<a href="https://drive.google.com/file/d/${p}/view" target="_blank"><img src="${photoUrl(p)}" loading="lazy"></a>`).join('')}</div>`:''}
+  ${can?`<div class="f"><label>แนบรูป</label><input type="file" id="uP" accept="image/*" multiple></div>`:''}
+  <div class="row">${id&&can&&!linked?`<button class="btn" style="color:#dc2626" onclick="upDel('${id}')">🗑 ลบ</button>`:''}<span class="sp"></span><button class="btn" onclick="closeSheet()">ปิด</button>${can?`<button class="btn pri" onclick="upSave('${id}','${x.unit}')">บันทึก</button>`:''}</div>`);
+}
+async function upSave(id,unit){
+  const g=i=>document.getElementById(i);const st=document.querySelector('#sheet .seg button.on');
+  const item={id,unit,start:g('uS').value,end:g('uE').value,kind:g('uK').value,title:g('uT').value.trim(),crew:g('uC').value.trim(),note:g('uN').value.trim(),mob:g('uM').checked,status:st?st.textContent:'แผน',newPhotos:await filesToData(g('uP'))};
+  if(!item.title)return toast('ระบุงานก่อน');if(!item.start)return toast('ระบุวันที่');
+  closeSheet();await act('upSave',{item},'บันทึกแผนหน่วยแล้ว');
+}
+function upDel(id){if(!confirmDel){confirmDel=id;toast('กดลบอีกครั้งเพื่อยืนยัน');return setTimeout(()=>confirmDel='',3000)}confirmDel='';closeSheet();act('upDel',{id},'ลบแล้ว')}
+let confirmDel='';
+// งานที่ขอระดมทีมของหน่วย ที่ยังไม่ได้วัน (ใช้ตอนเลือกวัน)
+function upMobPending(unit){return UP().filter(x=>x.unit===unit&&x.mob&&!x.outId&&x.status!=='ยกเลิก'&&!PICK.some(p=>p.upId===x.id))}
+function upPrint(ym){
+  const unit=upMine();const [y,m]=ym.split('-').map(Number);
+  const list=UP().filter(x=>x.unit===unit&&x.start<=monthDays(ym).slice(-1)[0]&&x.end>=ym+'-01').sort((a,b)=>a.start<b.start?-1:1);
+  return `<div class="card noprint"><div class="row"><b>แผนหน่วย</b>${seeAllUp()?`<select onchange="UPU=this.value;vRpt()">${UNITS.map(u=>`<option value="${u.id}" ${u.id===unit?'selected':''}>${u.name}</option>`).join('')}</select>`:''}</div></div>
+  <div id="docWrap"><div id="printArea"><div class="pg upg">
+  <h2>แผนงานภายใน ${T(U[unit]?.name||unit)} ประจำเดือน${TM[m-1]} ${thaiNum(y+543)}</h2>
+  <table class="ut"><colgroup><col style="width:13%"><col style="width:18%"><col><col style="width:22%"><col style="width:11%"></colgroup>
+  <tr><th>วันที่</th><th>ประเภท</th><th>งาน / สถานที่</th><th>ทีม / อุปกรณ์</th><th>สถานะ</th></tr>
+  ${list.map(x=>{const o=x.outId&&EV.find(e=>e.id===x.outId);return`<tr><td>${thaiNum(+x.start.slice(8))}${x.end!==x.start?'–'+thaiNum(+x.end.slice(8)):''} ${TMS[m-1]}</td><td>${T(x.kind)}</td><td>${T(x.title)}${o?'<br><b>(ระดมทีม)</b>':''}${x.note?'<br><span style="font-size:.85em">'+T(x.note)+'</span>':''}</td><td>${T(x.crew)}</td><td>${T(x.status)}</td></tr>`}).join('')||'<tr><td colspan="5" style="text-align:center">ไม่มีงาน</td></tr>'}
+  </table></div></div></div>`;
+}
+
 // ---------- เอกสารขออนุมัติแผนประจำเดือน (หน้า 1 บันทึก + หน้า 2 ปฏิทินแนวนอน) ----------
 const DOCDEF={from:'ผปบ.กฟจ.กระบี่',to:'กฟจ.กระบี่',no:'ต.๒ กบ.(ปบ.)',dear:'ผจก.กฟจ.กระบี่',
   signName:'นายมนตรี ธรรมประดิษฐ์',signPos:'รจก. รักษาการแทน ผจก.กฟจ.กระบี่',

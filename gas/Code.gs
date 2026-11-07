@@ -6,7 +6,7 @@
 const SP = PropertiesService.getScriptProperties();
 const UNITS = ['ผกส','ผปบ','อล','คท','หคง','กลต','ขพ'];
 const PLANNER_UNITS = ['ผกส','ผปบ'];
-const ROLE_RANK = {viewer:1, picker:2, planner:3, coadmin:4, admin:5};
+const ROLE_RANK = {viewer:1, lead:1.5, picker:2, planner:3, coadmin:4, admin:5};
 const SHEETS = {
   Events:  ['id','start','end','type','unit','title','crew','hl','photos','src','createdBy','createdAt','ofOut'],
   Users:   ['lineId','name','pic','unit','role','status','createdAt','lastLogin'],
@@ -15,6 +15,7 @@ const SHEETS = {
   Picks:   ['month','round','unit','dates','by','at'],
   Swaps:   ['id','month','from','to','a','b','st','by','at','answeredBy','answeredAt'],
   Audit:   ['at','by','action','detail'],
+  UnitPlans: ['id','unit','start','end','kind','title','crew','status','mob','outId','photos','note','createdBy','createdAt','updatedAt'],
 };
 
 // ================= SETUP (รันครั้งเดียวจากหน้า Apps Script) =================
@@ -55,14 +56,19 @@ function setLineChannel(channelId) { SP.setProperty('LINE_CHANNEL_ID', String(ch
 
 // ================= sheet helpers =================
 function ss_() { return SpreadsheetApp.openById(SP.getProperty('SS_ID')); }
+function sheet_(name) {
+  const ss = ss_(); let sh = ss.getSheetByName(name);
+  if (!sh) { sh = ss.insertSheet(name); sh.getRange(1, 1, sh.getMaxRows(), SHEETS[name].length).setNumberFormat('@'); sh.appendRow(SHEETS[name]); sh.setFrozenRows(1); }
+  return sh;
+}
 function rows_(name) {
-  const sh = ss_().getSheetByName(name); const v = sh.getDataRange().getValues(); const h = v.shift();
+  const sh = sheet_(name); const v = sh.getDataRange().getValues(); const h = v.shift();
   return v.map((r, i) => { const o = {_row: i + 2}; h.forEach((k, j) => o[k] = r[j] instanceof Date ? fmtD_(r[j]) : r[j]); return o; });
 }
 function fmtD_(d) { return Utilities.formatDate(d, 'Asia/Bangkok', 'yyyy-MM-dd'); }
-function append_(name, obj) { const sh = ss_().getSheetByName(name); sh.appendRow(SHEETS[name].map(k => obj[k] === undefined ? '' : obj[k])); }
+function append_(name, obj) { const sh = sheet_(name); sh.appendRow(SHEETS[name].map(k => obj[k] === undefined ? '' : obj[k])); }
 function update_(name, row, obj) {
-  const sh = ss_().getSheetByName(name);
+  const sh = sheet_(name);
   SHEETS[name].forEach((k, j) => { if (obj[k] !== undefined) sh.getRange(row, j + 1).setValue(obj[k]); });
 }
 function getCfg_(key, dflt) { const r = rows_('Config').find(x => x.key === key); return r ? JSON.parse(r.value) : dflt; }
@@ -119,6 +125,8 @@ function route_(p) {
       case 'addPhoto': return addPhoto_(u, p);
       case 'setUser': return setUser_(u, p);
       case 'docSave': return docSave_(u, p);
+      case 'upSave': return upSave_(u, p);
+      case 'upDel': return upDel_(u, p);
       default: return {ok: false, error: 'unknown action'};
     }
   } finally { if (write) lock.releaseLock(); }
@@ -203,6 +211,8 @@ function state_(u) {
   out.picks = rows_('Picks').map(p => ({month: p.month, round: Number(p.round), unit: p.unit, dates: String(p.dates).split(',').filter(Boolean), by: p.by, at: p.at}));
   out.swaps = rows_('Swaps').map(s => ({id: s.id, month: s.month, from: s.from, to: s.to, a: s.a, b: s.b, st: s.st, at: s.at}));
   out.doc = getCfg_('doc', null);
+  const seeAll = isPlanner_(u);
+  out.unitPlans = rows_('UnitPlans').filter(x => seeAll || x.unit === u.unit).map(x => ({id: x.id, unit: x.unit, start: x.start, end: x.end, kind: x.kind, title: x.title, crew: x.crew, status: x.status, mob: x.mob === true || x.mob === 'TRUE', outId: x.outId, photos: x.photos ? String(x.photos).split(',') : [], note: x.note, by: x.createdBy}));
   out.audit = rows_('Audit').slice(-60).reverse().map(a => ({at: a.at, by: a.by, action: a.action, detail: a.detail}));
   if (isCo_(u) || isPlanner_(u)) out.users = rows_('Users').map(x => ({lineId: x.lineId, name: x.name, pic: x.pic, unit: x.unit, role: x.role, status: x.status, lastLogin: x.lastLogin}));
   return out;
@@ -245,6 +255,7 @@ function pick_(u, p) {
     const photos = (it.photos || []).map(b => savePhoto_(b, month + '_' + unit + '_' + it.date)).join(',');
     const o = {id, start: it.date, end: it.date, type: 'O', unit, title: it.title || '', crew: it.crew || '', hl, photos, src: 'round', createdBy: u.name, createdAt: now, ofOut: ''};
     append_('Events', o); evs.push(o); dates.push(it.date);
+    if (it.upId) { const up = rows_('UnitPlans').find(x => x.id === it.upId && x.unit === unit); if (up) update_('UnitPlans', up._row, {outId: id, start: it.date, end: it.date, mob: true, updatedAt: now}); }
     if (hl) { const l = {id: newId_(), start: it.date, end: it.date, type: 'L', unit: '', title: 'ช่วยงาน ' + unit + '.', crew: '', hl: '', photos: '', src: 'round', createdBy: u.name, createdAt: now, ofOut: id}; append_('Events', l); evs.push(l); }
   });
   append_('Picks', {month, round: cfg.turn.round, unit, dates: dates.sort().join(','), by: u.name, at: now});
@@ -276,6 +287,7 @@ function addPhoto_(u, p) {
 function swapReq_(u, p) {
   const month = getCfg_('active', ''); const cfg = getCfg_('round:' + month, null);
   if (!cfg || cfg.status !== 'swap') throw new Error('ยังไม่เปิดให้แลกวัน');
+  if (rank_(u) < 2) throw new Error('ไม่มีสิทธิ์แลกวัน');
   const unit = actUnit_(u, p.unit); const evs = rows_('Events');
   const A = evs.find(e => e.type === 'O' && e.start === p.a), B = evs.find(e => e.type === 'O' && e.start === p.b);
   if (!A || A.unit !== unit) throw new Error('วันแรกต้องเป็นวันของหน่วยคุณ');
@@ -286,12 +298,13 @@ function swapReq_(u, p) {
 }
 function swapAns_(u, p) {
   const s = rows_('Swaps').find(x => x.id === p.id); if (!s || s.st !== 'รอ') throw new Error('ไม่พบคำขอ');
-  if (s.to !== u.unit && !isCo_(u)) throw new Error('ตอบได้เฉพาะหน่วยที่ถูกขอ');
+  if ((s.to !== u.unit || rank_(u) < 2) && !isCo_(u)) throw new Error('ตอบได้เฉพาะหน่วยที่ถูกขอ');
   if (!p.ok) { update_('Swaps', s._row, {st: 'ปฏิเสธ', answeredBy: u.name, answeredAt: new Date().toISOString()}); push_(idsOfUnit_(s.from), '❌ ' + UNAME[s.to] + ' ปฏิเสธการแลกวัน ' + thD_(s.a) + ' ⇄ ' + thD_(s.b)); return {ok: true}; }
   const evs = rows_('Events');
   const A = evs.find(e => e.type === 'O' && e.start === s.a && e.unit === s.from), B = evs.find(e => e.type === 'O' && e.start === s.b && e.unit === s.to);
   if (!A || !B) { update_('Swaps', s._row, {st: 'ยกเลิก (วันเปลี่ยนไปแล้ว)'}); throw new Error('วันที่ขอแลกเปลี่ยนไปแล้ว'); }
   update_('Events', A._row, {start: s.b, end: s.b}); update_('Events', B._row, {start: s.a, end: s.a});
+  rows_('UnitPlans').forEach(x => { if (x.outId === A.id) update_('UnitPlans', x._row, {start: s.b, end: s.b}); else if (x.outId === B.id) update_('UnitPlans', x._row, {start: s.a, end: s.a}); });
   evs.filter(e => e.type === 'L' && (e.ofOut === A.id || e.ofOut === B.id)).forEach(l => { const d = l.ofOut === A.id ? s.b : s.a; update_('Events', l._row, {start: d, end: d}); });
   update_('Swaps', s._row, {st: 'สำเร็จ', answeredBy: u.name, answeredAt: new Date().toISOString()});
   audit_(u, 'แลกวัน', s.from + ' ' + s.a + ' ⇄ ' + s.to + ' ' + s.b);
@@ -309,6 +322,37 @@ function docSave_(u, p) {
   add(cur.fields.signName, cur.fields.signPos); add(cur.fields.apName, cur.fields.apPos);
   setCfg_('doc', cur);
   return {ok: true, doc: cur};
+}
+
+// ================= แผนหน่วย (งานภายในของแต่ละหน่วย) =================
+const UP_KINDS = ['ปรับปรุงระบบ / ย้ายแนว','PM / ซ่อมบำรุง','ตัดต้นไม้','ตรวจระบบ (Patrol)','อบรม / ประชุมภายใน','อื่น ๆ'];
+const UP_STATUS = ['แผน','ทำแล้ว','เลื่อน','ยกเลิก'];
+function canUp_(u, unit) { return (unit === u.unit && rank_(u) >= 1.5) || isCo_(u); }
+function upSave_(u, p) {
+  const it = p.item || {}; const now = new Date().toISOString();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(it.start || '')) throw new Error('ระบุวันที่');
+  if (!(it.title || '').trim()) throw new Error('ระบุงาน');
+  const end = it.end && it.end >= it.start ? it.end : it.start;
+  const photos = (it.newPhotos || []).map(b => savePhoto_(b, 'unit_' + (it.unit || u.unit) + '_' + it.start));
+  if (it.id) {
+    const r = rows_('UnitPlans').find(x => x.id === it.id); if (!r) throw new Error('ไม่พบงาน');
+    if (!canUp_(u, r.unit)) throw new Error('แก้ได้เฉพาะแผนของหน่วยตัวเอง');
+    const linked = !!r.outId;
+    update_('UnitPlans', r._row, {start: linked ? r.start : it.start, end: linked ? r.end : end, kind: it.kind || r.kind, title: it.title, crew: it.crew || '', status: UP_STATUS.includes(it.status) ? it.status : r.status, mob: linked ? true : !!it.mob, note: it.note || '', photos: (r.photos ? String(r.photos).split(',') : []).concat(photos).filter(Boolean).join(','), updatedAt: now});
+    if (r.unit !== u.unit) audit_(u, 'แก้แผนหน่วยแทน ' + r.unit, it.title);
+  } else {
+    const unit = it.unit || u.unit;
+    if (!canUp_(u, unit)) throw new Error('ลงได้เฉพาะแผนของหน่วยตัวเอง');
+    append_('UnitPlans', {id: newId_(), unit, start: it.start, end, kind: UP_KINDS.includes(it.kind) ? it.kind : 'อื่น ๆ', title: it.title.trim(), crew: it.crew || '', status: 'แผน', mob: !!it.mob, outId: '', photos: photos.join(','), note: it.note || '', createdBy: u.name, createdAt: now, updatedAt: now});
+  }
+  return {ok: true};
+}
+function upDel_(u, p) {
+  const r = rows_('UnitPlans').find(x => x.id === p.id); if (!r) throw new Error('ไม่พบงาน');
+  if (!canUp_(u, r.unit)) throw new Error('ลบได้เฉพาะแผนของหน่วยตัวเอง');
+  if (r.outId) throw new Error('งานนี้ได้วันระดมทีมแล้ว — ให้แอดมินลบวันระดมทีมก่อน');
+  sheet_('UnitPlans').deleteRow(r._row);
+  return {ok: true};
 }
 
 // ================= planner =================
@@ -344,6 +388,7 @@ function delEvent_(u, p) {
   const sh = ss_().getSheetByName('Events');
   const linked = evs.filter(e => e.ofOut === r.id).map(e => e._row);
   [r._row].concat(linked).sort((a, b) => b - a).forEach(row => sh.deleteRow(row));
+  if (r.type === 'O') rows_('UnitPlans').filter(x => x.outId === r.id).forEach(x => update_('UnitPlans', x._row, {outId: ''}));
   audit_(u, 'ลบรายการ', r.type + ' ' + r.start + ' ' + r.unit + ' ' + r.title);
   return {ok: true};
 }
