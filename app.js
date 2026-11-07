@@ -207,7 +207,7 @@ function setCM(m){CM=m;vCal()}
 function vCal(){
   document.getElementById('view').innerHTML=`
   <div class="card">${monthNav(CM,'setCM')}${legend()}
-  <label class="row note" style="margin-top:6px"><input type="checkbox" ${SHOWX?'checked':''} onchange="SHOWX=this.checked;vCal()"> แสดงงานนอกแผนระดมทีม (งานที่แต่ละหน่วยจัดเอง) — ไม่นับในระบบ</label></div>
+  <label class="note" style="margin-top:8px;display:flex;gap:8px;align-items:flex-start;cursor:pointer"><input type="checkbox" style="flex:none;width:18px;height:18px;margin:2px 0 0" ${SHOWX?'checked':''} onchange="SHOWX=this.checked;vCal()"><span>แสดงงานนอกแผนระดมทีม (งานที่แต่ละหน่วยจัดเอง — ไม่นับในระบบ)</span></label></div>
   ${calGrid(CM,d=>dayCell(d))}
   <p class="note">แตะวันที่เพื่อดูรายละเอียด และแนบรูปหน้างาน</p>`;
 }
