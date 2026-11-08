@@ -388,7 +388,10 @@ function upDel_(u, p) {
 function saveRound_(u, p) {
   if (!isPlanner_(u)) throw new Error('เฉพาะ ผกส./ผปบ. และแอดมิน');
   const month = p.month; const old = getCfg_('round:' + month, null); const c = p.cfg;
-  if (old && old.status !== 'setup' && JSON.stringify(old.order) !== JSON.stringify(c.order)) throw new Error('เปลี่ยนลำดับได้เฉพาะก่อนเปิดรอบ');
+  const base = UNITS.slice(2), tail = (c.order || []).slice(2), k = base.indexOf(tail[0]);
+  if (k < 0 || tail.join() !== base.slice(k).concat(base.slice(0, k)).join()) throw new Error('ลำดับ กฟส. ต้องเรียงวน ' + base.join(' → '));
+  const reorder = old && JSON.stringify(old.order) !== JSON.stringify(c.order);
+  if (reorder && old.status !== 'setup' && !(old.status === 'open' && old.turn.round === 1 && old.turn.idx <= 2)) throw new Error('มี กฟส. เลือกวันแล้ว เปลี่ยนลำดับไม่ได้');
   if (c.order.slice(0, 2).join() !== 'ผกส,ผปบ') throw new Error('ผกส. และ ผปบ. ต้องอยู่ลำดับ 1-2');
   delete c.turn; delete c.status; delete c.ro;
   const cfg = Object.assign({turn: {round: 1, idx: 0}, status: 'setup'}, old || {}, c);
@@ -397,11 +400,13 @@ function saveRound_(u, p) {
     if (p.status === 'setup' && rows_('Picks').some(x => x.month === month)) throw new Error('มีหน่วยเลือกวันแล้ว ย้อนกลับไม่ได้');
     cfg.status = p.status;
   }
+  if (reorder && cfg.status === 'open') cfg.ro = cfg.order.slice();
   if (cfg.status === 'open') settle_(cfg);
   const prev = old ? old.status : '';
   setCfg_('round:' + month, cfg);
   if (p.makeActive) setCfg_('active', month);
   if (p.status === 'open' && prev !== 'open') { push_(idsAll_(), '📅 เปิดเลือกวันดับไฟระดมทีม เดือน ' + mName_(month) + '\n' + cfg.rounds + ' รอบ · เรียงตามลำดับสิทธิ์ ' + cfg.order.map(x => x + '.').join(' → ') + (cfg.deadline ? '\nปิดรับ ' + thD_(cfg.deadline) : '')); notifyTurn_(month, cfg); }
+  if (reorder && prev === 'open' && cfg.status === 'open' && cfg.turn.idx >= 2) notifyTurn_(month, cfg);
   if (p.status === 'published' && prev !== 'published') push_(idsAll_(), '📢 ประกาศแผนงานระดมทีม เดือน ' + mName_(month) + ' แล้ว\nดูปฏิทินและพิมพ์แผนได้ที่ลิงก์');
   audit_(u, 'ตั้งค่ารอบ ' + month, {status: cfg.status, rounds: cfg.rounds});
   return {ok: true};

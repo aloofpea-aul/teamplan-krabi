@@ -364,11 +364,17 @@ function sendSwap(){const a=SWP.mine,b=SWP.theirs;SWP={mine:'',theirs:''};act('s
 // ---------- view: settings ----------
 function defaultRound(){return{rounds:2,perRound:{ผกส:2,ผปบ:1,อล:1,คท:1,หคง:1,กลต:1,ขพ:1},hlQuota:{ผกส:2,ผปบ:2,อล:1,คท:1,หคง:1,กลต:1,ขพ:1},order:UNITS.map(u=>u.id),allowWeekend:false,lockTraining:true,lockMeeting:true,deadline:''}}
 let SETM='';
+// ลำดับ กฟส. เรียงวน: เริ่มที่หน่วยไหน ก็ไล่ต่อไปตามวง (ผกส./ผปบ. ล็อก 1-2 เสมอ)
+const BASE=()=>UNITS.slice(FIXED).map(u=>u.id);
+function rotOrder(start){const b=BASE();const i=Math.max(0,b.indexOf(start));return UNITS.slice(0,FIXED).map(u=>u.id).concat(b.slice(i),b.slice(0,i))}
+function nextStart(ym){const prev=Object.keys(S.rounds).filter(k=>k<ym).sort().pop();if(!prev)return BASE()[0];const b=BASE();const s0=S.rounds[prev].order[FIXED];return b[(b.indexOf(s0)+1)%b.length]}
+function orderLocked(saved){if(!saved||saved.status==='setup')return false;if(saved.status!=='open')return true;return !(saved.turn.round===1&&saved.turn.idx<=FIXED)}
 function vSet(){
   const months=Object.keys(S.rounds).sort();
   if(!SETM)SETM=S.active||nextMonth(TODAY.slice(0,7));
   const saved=S.rounds[SETM];
-  if(!DRAFT||DRAFT._m!==SETM)DRAFT=Object.assign(defaultRound(),JSON.parse(JSON.stringify(saved||{})),{_m:SETM});
+  if(!DRAFT||DRAFT._m!==SETM){DRAFT=Object.assign(defaultRound(),JSON.parse(JSON.stringify(saved||{})),{_m:SETM});DRAFT.order=rotOrder(saved?saved.order[FIXED]:nextStart(SETM))}
+  const olock=orderLocked(saved);const odiff=saved&&saved.order.join()!==DRAFT.order.join();
   const c=DRAFT;const st=saved?.status||'ยังไม่สร้าง';const started=(S.picks||[]).some(p=>p.month===SETM);
   const [y,m]=SETM.split('-').map(Number);
   const stLabel={setup:'กำลังตั้งค่า',open:'เปิดให้เลือกวัน',swap:'ช่วงขอแลกวัน',published:'ประกาศแล้ว'}[st]||st;
@@ -387,12 +393,14 @@ function vSet(){
   <div class="card"><b>ลำดับสิทธิ์และจำนวนวัน</b>
     <div class="f" style="margin-top:8px"><label>จำนวนรอบ</label><div class="seg">${[1,2,3].map(n=>`<button class="${c.rounds===n?'on':''}" onclick="DRAFT.rounds=${n};vSet()">${n} รอบ</button>`).join('')}</div></div>
     <div class="f"><label>วันปิดรับการเลือก</label><input type="date" value="${c.deadline||''}" onchange="DRAFT.deadline=this.value"></div>
+    <div class="f"><label>กฟส. ที่ได้เลือกก่อนเดือนนี้ (ลำดับที่ 3) — ที่เหลือเรียงวนต่อกันไป</label><div class="seg">${BASE().map(id=>`<button class="${c.order[FIXED]===id?'on':''}" ${olock?'disabled':''} onclick="DRAFT.order=rotOrder('${id}');vSet()">${U[id].name.replace('ผปร.กฟส.','')}</button>`).join('')}</div>
+    <div class="note" style="margin-top:4px">วงลำดับ: ${BASE().map(id=>U[id].name.replace('ผปร.กฟส.','')).join(' → ')} → (วนกลับ)${!saved?` · เดือนใหม่เลื่อนผู้เริ่มให้อัตโนมัติจากเดือนก่อน`:''}${odiff?` · <b style="color:#c2410c">ลำดับเดิมไม่ได้เรียงวน — กด 💾 บันทึก เพื่อปรับ</b>`:''}${olock?' · 🔒 มีหน่วย กฟส. เลือกวันแล้ว เปลี่ยนลำดับไม่ได้':''}</div></div>
     <table><tr><th>ลำดับ</th><th class="c">เลือกได้/รอบ</th><th class="c">ฮอตไลน์/เดือน</th></tr>
-    ${c.order.map((id,i)=>{const u=U[id];return`<tr><td style="white-space:nowrap">${i<FIXED?'🔒':`<button class="btn" style="padding:0 6px" ${i<=FIXED||started?'disabled':''} onclick="moveOrder(${i},-1)">▲</button><button class="btn" style="padding:0 6px" ${i===c.order.length-1||started?'disabled':''} onclick="moveOrder(${i},1)">▼</button>`} ${i+1}. <b style="color:${u.c}">${u.name}</b></td>
+    ${c.order.map((id,i)=>{const u=U[id];return`<tr><td style="white-space:nowrap">${i<FIXED?'🔒':'🔁'} ${i+1}. <b style="color:${u.c}">${u.name}</b></td>
       <td class="c"><div class="seg">${[0,1,2,3].map(n=>`<button class="${QT(c,id)===n?'on':''}" onclick="DRAFT.perRound['${id}']=${n};vSet()">${n}</button>`).join('')}</div></td>
       <td class="c"><div class="seg">${[0,1,2,3].map(n=>`<button class="${c.hlQuota[id]===n?'on':''}" onclick="DRAFT.hlQuota['${id}']=${n};vSet()">${n}</button>`).join('')}</div></td></tr>`}).join('')}
     </table>
-    <p class="note">ผกส. และ ผปบ. เลือกก่อนเสมอ · ลำดับ กฟส. ปรับได้ก่อนมีหน่วยเลือกวัน · ทุกรอบเรียงลำดับเดิม · ไม่มีการข้ามคิว</p>
+    <p class="note">ผกส. และ ผปบ. เลือกก่อนเสมอ · ลำดับ กฟส. เรียงวน เลือกได้แค่หน่วยที่เริ่ม · ทุกรอบในเดือนเรียงลำดับเดิม · หน่วยที่ถึงคิวยกคิวให้หน่วยถัดไปได้ (เฉพาะรอบนั้น)</p>
   </div>
   <div class="card"><b>วันที่ล็อก (เลือกไม่ได้)</b>
     ${[['allowWeekend','เปิดให้เลือกเสาร์-อาทิตย์ได้'],['lockTraining','ล็อกวันอบรมทักษะ'],['lockMeeting','ล็อกวันประชุม']].map(([k,t])=>`<label class="row" style="margin:8px 0"><input type="checkbox" ${c[k]?'checked':''} onchange="DRAFT.${k}=this.checked"> ${t}</label>`).join('')}
