@@ -260,7 +260,9 @@ function openSheet(h){document.getElementById('sheet').innerHTML=h;document.getE
 function closeSheet(){document.getElementById('mask').classList.remove('on')}
 
 // ---------- view: booking ----------
-function curUnit(){const c=CFG();return c.order[c.turn.idx]}
+function RO(c){return c.ro&&c.ro.length===c.order.length?c.ro:c.order}
+function QT(c,id){const v=c.perRound[id];return v===undefined||v===null||v===''?1:+v}
+function curUnit(){const c=CFG();return RO(c)[c.turn.idx]}
 function allDone(){const c=CFG();return c.turn.round>c.rounds}
 function vBook(){
   const v=document.getElementById('view');
@@ -268,23 +270,24 @@ function vBook(){
   if(!c||c.status==='setup'){v.innerHTML=`<div class="card"><b>ยังไม่เปิดรอบเลือกวัน</b><p class="note">ผกส./ผปบ. จะเปิดรอบเลือกวันของเดือนถัดไป แล้วระบบจะแจ้งให้ทราบ</p>${isPlanner()?'<button class="btn pri" onclick="go(\'set\')">ไปตั้งค่ารอบ</button>':''}</div>`;return}
   const ym=S.active;const [y,m]=ym.split('-').map(Number);
   const done=c.status!=='open';const cu=done?'':curUnit();
-  const canPick=rank()>=2;const myTurn=!done&&cu===ME&&canPick&&(ME===S.me.unit||isCo());const quota=c.perRound[cu]||1;
+  const canPick=rank()>=2;const myTurn=!done&&cu===ME&&canPick&&(ME===S.me.unit||isCo());const quota=QT(c,cu);
   const log=LOG();
   let q='';
   for(let r=1;r<=c.rounds;r++){
     q+=`<div class="note" style="margin:6px 0 4px">รอบที่ ${r}</div><div class="queue">`;
-    c.order.forEach((id,i)=>{const u=U[id];
+    const ord=(!done&&c.turn.round===r)?RO(c):c.order;
+    ord.forEach((id,i)=>{const u=U[id];
       const lg=log.find(l=>l.unit===id&&l.round===r);
       const now=!done&&c.turn.round===r&&c.turn.idx===i;
-      const st=lg?'✔ '+lg.dates.map(x=>+x.slice(8)).join(', ')+' '+TMS[m-1]:now?'⏳ กำลังเลือก':'รอคิว';
-      q+=`<div class="q ${now?'now':''} ${lg?'done':''}"><div class="n">ลำดับ ${i+1}${i<FIXED?' 🔒':''} · ได้ ${c.perRound[id]} วัน</div><b style="color:${u.c}">${u.name}</b><div class="st">${st}</div></div>`;
+      const zero=QT(c,id)<=0;const st=lg?'✔ '+lg.dates.map(x=>+x.slice(8)).join(', ')+' '+TMS[m-1]:now?'⏳ กำลังเลือก':zero?'— ข้าม (0 วัน)':'รอคิว';
+      q+=`<div class="q ${now?'now':''} ${lg?'done':''}" ${zero&&!lg?'style="opacity:.45"':''}><div class="n">ลำดับ ${i+1}${i<FIXED?' 🔒':''} · ได้ ${QT(c,id)} วัน</div><b style="color:${u.c}">${u.name}</b><div class="st">${st}</div></div>`;
     });q+='</div>';
   }
   q+=`<div class="note" style="margin:6px 0 4px">ขั้นสุดท้าย</div><div class="queue"><div class="q ${c.status==='swap'?'now':''}"><b>🔁 ขอแลกวันกันได้</b><div class="st">${c.status==='swap'?'เปิดแล้ว':c.status==='published'?'ปิดแล้ว':'เปิดเมื่อครบทุกรอบ'}</div></div><div class="q ${c.status==='published'?'now':''}"><b>📢 ประกาศแผน</b><div class="st">${c.status==='published'?'ประกาศแล้ว':'โดย ผกส./ผปบ.'}</div></div></div>`;
   let ban;
   if(c.status==='published')ban=`<div class="banner turn">📢 ประกาศแผนเดือนนี้แล้ว</div>`;
   else if(done)ban=`<div class="banner turn">✅ ทุกหน่วยเลือกครบแล้ว — ขอแลกวันกับหน่วยอื่นได้ (อีกฝ่ายต้องกดยอมรับ)</div>`;
-  else if(myTurn)ban=`<div class="banner turn">ถึงคิว ${U[ME].name} แล้ว — ต้องเลือกให้ครบ ${quota} วัน (รอบที่ ${c.turn.round}) · เลือกแล้ว ${PICK.length}/${quota}<br><span style="font-weight:400;font-size:13px">ไม่มีการข้ามคิว — หน่วยถัดไปจะเลือกได้เมื่อคุณยืนยันแล้วเท่านั้น</span></div>`;
+  else if(myTurn)ban=`<div class="banner turn">ถึงคิว ${U[ME].name} แล้ว — ต้องเลือกให้ครบ ${quota} วัน (รอบที่ ${c.turn.round}) · เลือกแล้ว ${PICK.length}/${quota}<br><span style="font-weight:400;font-size:13px">หน่วยถัดไปจะเลือกได้เมื่อคุณยืนยันแล้ว · ยังไม่พร้อม? ยกคิวให้หน่วยถัดไปก่อนได้</span><div style="margin-top:8px"><button class="btn" onclick="yieldTurn()">⏭ ให้หน่วยถัดไปเลือกก่อน</button></div></div>`;
   else ban=`<div class="banner wait">รอ <b style="color:${U[cu].c}">${U[cu].name}</b> เลือก (รอบที่ ${c.turn.round})${canPick?'':' · คุณมีสิทธิ์ดูอย่างเดียว'}</div>`;
   const hlLeft=(c.hlQuota[ME]||0)-hlUsed(ME,ym);
   v.innerHTML=`
@@ -315,7 +318,7 @@ function bookClick(d){
   const cu=curUnit();if(cu!==ME||rank()<2){const why=lockReason(d,c);toast(why?('🔒 '+why):'ยังไม่ถึงคิวของคุณ');return}
   if(PICK.find(p=>p.date===d)){PICK=PICK.filter(p=>p.date!==d);return vBook()}
   const why=lockReason(d,c);if(why)return toast('🔒 เลือกไม่ได้: '+why);
-  const quota=c.perRound[ME]||1;if(PICK.length>=quota)return toast('รอบนี้เลือกได้ '+quota+' วัน');
+  const quota=QT(c,ME);if(PICK.length>=quota)return toast('รอบนี้เลือกได้ '+quota+' วัน');
   const hlLeft=(c.hlQuota[ME]||0)-hlUsed(ME,S.active)-PICK.filter(p=>p.hl).length;
   const hb=hlBusy(d);const hlOk=hlLeft>0&&!hb.length;
   const pend=upMobPending(ME);
@@ -386,7 +389,7 @@ function vSet(){
     <div class="f"><label>วันปิดรับการเลือก</label><input type="date" value="${c.deadline||''}" onchange="DRAFT.deadline=this.value"></div>
     <table><tr><th>ลำดับ</th><th class="c">เลือกได้/รอบ</th><th class="c">ฮอตไลน์/เดือน</th></tr>
     ${c.order.map((id,i)=>{const u=U[id];return`<tr><td style="white-space:nowrap">${i<FIXED?'🔒':`<button class="btn" style="padding:0 6px" ${i<=FIXED||started?'disabled':''} onclick="moveOrder(${i},-1)">▲</button><button class="btn" style="padding:0 6px" ${i===c.order.length-1||started?'disabled':''} onclick="moveOrder(${i},1)">▼</button>`} ${i+1}. <b style="color:${u.c}">${u.name}</b></td>
-      <td class="c"><div class="seg">${[1,2,3].map(n=>`<button class="${c.perRound[id]===n?'on':''}" onclick="DRAFT.perRound['${id}']=${n};vSet()">${n}</button>`).join('')}</div></td>
+      <td class="c"><div class="seg">${[0,1,2,3].map(n=>`<button class="${QT(c,id)===n?'on':''}" onclick="DRAFT.perRound['${id}']=${n};vSet()">${n}</button>`).join('')}</div></td>
       <td class="c"><div class="seg">${[0,1,2,3].map(n=>`<button class="${c.hlQuota[id]===n?'on':''}" onclick="DRAFT.hlQuota['${id}']=${n};vSet()">${n}</button>`).join('')}</div></td></tr>`}).join('')}
     </table>
     <p class="note">ผกส. และ ผปบ. เลือกก่อนเสมอ · ลำดับ กฟส. ปรับได้ก่อนมีหน่วยเลือกวัน · ทุกรอบเรียงลำดับเดิม · ไม่มีการข้ามคิว</p>
@@ -399,8 +402,12 @@ function vSet(){
   <div class="card"><b>ประวัติการแก้ไขโดยผู้ดูแล</b><table style="margin-top:6px">${(S.audit||[]).slice(0,25).map(a=>`<tr><td class="note" style="white-space:nowrap">${esc(String(a.at).slice(0,16).replace('T',' '))}</td><td>${esc(a.by)}</td><td>${esc(a.action)}</td><td class="note">${esc(a.detail)}</td></tr>`).join('')||'<tr><td class="note">ยังไม่มี</td></tr>'}</table></div>`;
 }
 function moveOrder(i,d){const o=DRAFT.order;const j=i+d;if(j<FIXED||j>=o.length)return;[o[i],o[j]]=[o[j],o[i]];vSet()}
+let YQ=0;async function yieldTurn(){const c=CFG();const ro=RO(c);let j=c.turn.idx+1;while(j<ro.length&&QT(c,ro[j])<=0)j++;
+  if(j>=ro.length)return toast('เป็นหน่วยสุดท้ายของรอบนี้แล้ว');
+  if(Date.now()-YQ>4000){YQ=Date.now();return toast('แตะอีกครั้งเพื่อยืนยัน: ให้ '+U[ro[j]].name+' เลือกก่อน')}
+  YQ=0;PICK=[];await act('yield',{unit:ME},'ยกคิวให้ '+U[ro[j]].name+' แล้ว')}
 async function saveRound(status){
-  const cfg=Object.assign({},DRAFT);delete cfg._m;delete cfg.turn;delete cfg.status;
+  const cfg=Object.assign({},DRAFT);delete cfg._m;delete cfg.turn;delete cfg.status;delete cfg.ro;
   await act('saveRound',{month:SETM,cfg,status,makeActive:status==='open'},status==='open'?'เปิดให้เลือกวันแล้ว':status==='published'?'ประกาศแผนแล้ว':'บันทึกแล้ว');DRAFT=null;
 }
 function usersCard(){

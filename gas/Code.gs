@@ -116,6 +116,7 @@ function route_(p) {
     switch (p.action) {
       case 'state': return state_(u);
       case 'pick': return pick_(u, p);
+      case 'yield': return yield_(u, p);
       case 'swapReq': return swapReq_(u, p);
       case 'swapAns': return swapAns_(u, p);
       case 'saveRound': return saveRound_(u, p);
@@ -194,8 +195,8 @@ function idsAdmins_() { return approved_().filter(u => rank_(u) >= 4).map(u => u
 function notifyTurn_(month, cfg) {
   if (cfg.status === 'swap') { push_(idsAll_(), '✅ แผนระดมทีม ' + mName_(month) + '\nทุกหน่วยเลือกวันครบแล้ว — ขอแลกวันกับหน่วยอื่นได้จนกว่าจะประกาศแผน'); return; }
   if (cfg.status !== 'open') return;
-  const unit = cfg.order[cfg.turn.idx];
-  push_(idsOfUnit_(unit), '✋ ถึงคิว ' + UNAME[unit] + ' เลือกวันดับไฟระดมทีม\nเดือน ' + mName_(month) + ' · รอบที่ ' + cfg.turn.round + ' · เลือกได้ ' + (cfg.perRound[unit] || 1) + ' วัน\nหน่วยถัดไปรอคุณยืนยันอยู่ครับ');
+  const unit = cur_(cfg);
+  push_(idsOfUnit_(unit), '✋ ถึงคิว ' + UNAME[unit] + ' เลือกวันดับไฟระดมทีม\nเดือน ' + mName_(month) + ' · รอบที่ ' + cfg.turn.round + ' · เลือกได้ ' + q_(cfg, unit) + ' วัน\nหน่วยถัดไปรอคุณยืนยันอยู่ครับ');
 }
 /** ทดสอบส่งข้อความหาแอดมิน (รันจากหน้า Apps Script) */
 function testPush() { push_(idsAdmins_(), '🔔 ทดสอบแจ้งเตือน แผนงานระดมทีม กฟจ.กระบี่'); }
@@ -231,6 +232,18 @@ function lockReason_(evs, cfg, d) {
   return '';
 }
 function allDone_(cfg) { return cfg.turn.round > cfg.rounds; }
+// จำนวนวันที่เลือกได้ต่อรอบ (0 = ข้ามหน่วยนี้) · ลำดับของรอบปัจจุบัน (ยกคิวได้เฉพาะรอบนั้น)
+function q_(cfg, unit) { const v = cfg.perRound[unit]; return v === undefined || v === null || v === '' ? 1 : +v; }
+function ro_(cfg) { return cfg.ro && cfg.ro.length === cfg.order.length ? cfg.ro : cfg.order; }
+function cur_(cfg) { return ro_(cfg)[cfg.turn.idx]; }
+function settle_(cfg) {
+  while (cfg.turn.round <= cfg.rounds) {
+    if (cfg.turn.idx >= ro_(cfg).length) { cfg.turn.idx = 0; cfg.turn.round++; cfg.ro = cfg.order.slice(); continue; }
+    if (q_(cfg, cur_(cfg)) > 0) break;
+    cfg.turn.idx++;
+  }
+  if (allDone_(cfg)) cfg.status = 'swap';
+}
 
 // ================= pick =================
 function pick_(u, p) {
@@ -238,9 +251,9 @@ function pick_(u, p) {
   if (!cfg || cfg.status !== 'open') throw new Error('ยังไม่เปิดรอบเลือกวัน');
   const unit = actUnit_(u, p.unit);
   if (rank_(u) < 2) throw new Error('ไม่มีสิทธิ์เลือกวัน');
-  const cur = cfg.order[cfg.turn.idx];
+  const cur = cur_(cfg);
   if (cur !== unit) throw new Error('ยังไม่ถึงคิวของ ' + unit + '. (ตอนนี้คิว ' + cur + '.)');
-  const quota = cfg.perRound[unit] || 1;
+  const quota = q_(cfg, unit);
   if (!p.items || p.items.length !== quota) throw new Error('ต้องเลือกให้ครบ ' + quota + ' วัน');
   const evs = rows_('Events');
   let hlLeft = (cfg.hlQuota[unit] || 0) - evs.filter(e => e.type === 'O' && e.unit === unit && e.start.startsWith(month) && (e.hl === true || e.hl === 'TRUE')).length;
@@ -261,9 +274,25 @@ function pick_(u, p) {
   append_('Picks', {month, round: cfg.turn.round, unit, dates: dates.sort().join(','), by: u.name, at: now});
   if (unit !== u.unit) audit_(u, 'เลือกวันแทน ' + unit, dates.join(','));
   // คิวถัดไป
-  cfg.turn.idx++; if (cfg.turn.idx >= cfg.order.length) { cfg.turn.idx = 0; cfg.turn.round++; }
-  if (allDone_(cfg)) cfg.status = 'swap';
+  cfg.turn.idx++; settle_(cfg);
   setCfg_('round:' + month, cfg);
+  notifyTurn_(month, cfg);
+  return {ok: true};
+}
+// ยกคิวให้หน่วยถัดไปเลือกก่อน (สลับลำดับเฉพาะรอบนี้)
+function yield_(u, p) {
+  const month = getCfg_('active', ''); const cfg = getCfg_('round:' + month, null);
+  if (!cfg || cfg.status !== 'open') throw new Error('ยังไม่เปิดรอบเลือกวัน');
+  const unit = actUnit_(u, p.unit);
+  if (rank_(u) < 2) throw new Error('ไม่มีสิทธิ์');
+  if (cur_(cfg) !== unit) throw new Error('ยกคิวได้เฉพาะหน่วยที่ถึงคิว');
+  const ro = ro_(cfg).slice(); const i = cfg.turn.idx;
+  let j = i + 1; while (j < ro.length && q_(cfg, ro[j]) <= 0) j++;
+  if (j >= ro.length) throw new Error('เป็นหน่วยสุดท้ายของรอบนี้แล้ว ไม่มีหน่วยถัดไปให้ยกคิว');
+  [ro[i], ro[j]] = [ro[j], ro[i]]; cfg.ro = ro;
+  setCfg_('round:' + month, cfg);
+  audit_(u, 'ยกคิว', unit + ' → ' + ro[i] + ' (รอบ ' + cfg.turn.round + ')');
+  push_(idsOfUnit_(unit), '⏭ ' + UNAME[unit] + ' ยกคิวให้ ' + UNAME[ro[i]] + ' เลือกก่อน — คุณจะถึงคิวต่อจากนั้น');
   notifyTurn_(month, cfg);
   return {ok: true};
 }
@@ -361,12 +390,14 @@ function saveRound_(u, p) {
   const month = p.month; const old = getCfg_('round:' + month, null); const c = p.cfg;
   if (old && old.status !== 'setup' && JSON.stringify(old.order) !== JSON.stringify(c.order)) throw new Error('เปลี่ยนลำดับได้เฉพาะก่อนเปิดรอบ');
   if (c.order.slice(0, 2).join() !== 'ผกส,ผปบ') throw new Error('ผกส. และ ผปบ. ต้องอยู่ลำดับ 1-2');
+  delete c.turn; delete c.status; delete c.ro;
   const cfg = Object.assign({turn: {round: 1, idx: 0}, status: 'setup'}, old || {}, c);
   if (p.status) {
-    if (p.status === 'open' && cfg.status === 'setup') cfg.turn = {round: 1, idx: 0};
+    if (p.status === 'open' && cfg.status === 'setup') { cfg.turn = {round: 1, idx: 0}; cfg.ro = cfg.order.slice(); }
     if (p.status === 'setup' && rows_('Picks').some(x => x.month === month)) throw new Error('มีหน่วยเลือกวันแล้ว ย้อนกลับไม่ได้');
     cfg.status = p.status;
   }
+  if (cfg.status === 'open') settle_(cfg);
   const prev = old ? old.status : '';
   setCfg_('round:' + month, cfg);
   if (p.makeActive) setCfg_('active', month);
