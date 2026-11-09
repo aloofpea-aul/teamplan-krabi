@@ -658,7 +658,9 @@ function docMemo(ym){
 function docCal(ym){
   const [y,m]=ym.split('-').map(Number);const days=monthDays(ym);const first=dow(days[0]);
   const cells=[];for(let i=0;i<first;i++)cells.push('');days.forEach(d=>cells.push(d));while(cells.length%7)cells.push('');
-  const keep=e=>e.type!=='P'&&(DOC.withX||e.type!=='W');
+  const keep=e=>e.type!=='P'&&(e.type!=='W'||(DOC.withX&&e.unit===ME));
+  // งานนอกแผนระดมทีม (แผนหน่วย) เฉพาะหน่วยตัวเอง — ไม่รวมงานที่ผูกกับวันระดมทีมแล้ว/ยกเลิก
+  const ups=DOC.withX?UP().filter(x=>x.unit===ME&&!x.outId&&x.status!=='ยกเลิก'):[];
   const multiL=EV.filter(e=>e.type==='L'&&e.start!==e.end&&e.end>=days[0]&&e.start<=days[days.length-1]);
   const nWeeks=cells.length/7;const cellH=Math.floor((168-nWeeks*5.5)/nWeeks)-2;
   const CW=[30,42.5,45.5,44,44,44,30];// มม. รวม 280 ตามต้นแบบ Word (A4 แนวนอน)
@@ -671,9 +673,11 @@ function docCal(ym){
       ev.filter(e=>e.type!=='L').forEach(e=>{
         if(e.type==='H')h+=`<div class="hol">${T(e.title)}</div>`;
         else if(e.type==='O')h+=`<div class="blk"><span class="off">ดับไฟ</span> ${T(e.unit)}.<br>${T(e.title)}${e.crew?'<br>'+T(e.crew):''}</div>`;
-        else h+=`<div class="blk">${T(e.title)}${e.crew?'<br>'+T(e.crew):''}</div>`;
+        else h+=`<div class="blk">${e.type==='W'?`<span class="own">${T(e.unit)}.</span> `:''}${T(e.title)}${e.crew?'<br>'+T(e.crew):''}</div>`;
       });
-      if(!ev.filter(e=>e.type!=='L').length&&![0,6].includes(dow(d)))h+=`<div class="blk">ตามภาระหน้าที่</div>`;
+      const upd=ups.filter(x=>d>=x.start&&d<=(x.end||x.start));
+      upd.forEach(x=>{h+=`<div class="blk"><span class="own">${T(ME)}.</span> ${T(x.title)}${x.crew?'<br>'+T(x.crew):''}</div>`});
+      if(!ev.filter(e=>e.type!=='L').length&&!upd.length&&![0,6].includes(dow(d)))h+=`<div class="blk">ตามภาระหน้าที่</div>`;
       h+='</div>';
       const l1=ev.filter(e=>e.type==='L'&&e.start===e.end);
       if(l1.length)h+=`<div class="hl1">${l1.map(l=>'กบ.๐๖ '+(l.title.startsWith('ช่วยงาน')?'':'ไป ')+T(l.title)).join('<br>')}</div>`;
@@ -710,7 +714,7 @@ function docPanel(){
   <div class="row">${f('foot1','ท้ายหนังสือ บรรทัด 1',150)}${f('foot2','บรรทัด 2',150)}</div></details>
   <div class="row" style="margin-top:6px">
     <label class="row note"><input type="checkbox" ${DOC.withMemo?'checked':''} onchange="docSet('withMemo',this.checked)"> พิมพ์หน้าบันทึกขออนุมัติ</label>
-    <label class="row note"><input type="checkbox" ${DOC.withX?'checked':''} onchange="docSet('withX',this.checked)"> รวมงานนอกแผนระดมทีมในปฏิทิน</label></div>
+    <label class="row note"><input type="checkbox" ${DOC.withX?'checked':''} onchange="docSet('withX',this.checked)"> รวมงานนอกแผนระดมทีมของ ${U[ME].name} ในตาราง (แสดงเฉพาะหน่วยตัวเอง + งานระดมทีม)</label></div>
   <p class="note">ฟอนต์ TH Sarabun New · บันทึกข้อความ ๑๖ · ตาราง ๑๔ (ย่อลงเองถ้างานแน่น) · ได้ ๒ หน้าเสมอ · หน้า ๑ บันทึกข้อความ A4 แนวตั้ง · หน้า ๒ ตาราง A4 แนวนอน (กระดาษหมุนให้อัตโนมัติ) · ตอนสั่งพิมพ์ ตั้ง ระยะขอบ = ไม่มี และ สเกล = 100%</p></div>`;
 }
 function docView(ym){
