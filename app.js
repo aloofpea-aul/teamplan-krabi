@@ -706,11 +706,11 @@ function docPanel(){
     <label class="f" style="min-width:150px"><span>วันที่หนังสือ</span><input type="date" value="${DOCDATE}" onchange="DOCDATE=this.value;vRpt()"></label>
     ${f('no','เลขที่',120)}${f('from','จาก',140)}${f('to','ถึง',120)}${f('dear','เรียน',150)}</div>
   <datalist id="dlNames">${names.map(x=>`<option value="${esc(x.n)}">${esc(x.pos)}</option>`).join('')}</datalist>
-  <div class="row">${f('signName','ผู้ลงนาม (ชื่อ) — พิมพ์ใหม่หรือเลือกจากที่เคยใช้',0,1)}${f('signPos','ตำแหน่ง')}</div>
-  <details><summary class="note" style="cursor:pointer">ส่วนท้าย (ผู้อนุมัติ / สำเนาเรียน / ท้ายหนังสือ)</summary>
+  <div class="row" style="margin-top:6px"><b style="min-width:70px">✍️ ผู้เสนอ</b>${f('signName','ชื่อ (ลงนามใต้ข้อความขออนุมัติ) — พิมพ์ใหม่หรือเลือกจากที่เคยใช้',0,1)}${f('signPos','ตำแหน่ง ผู้เสนอ')}</div>
+  <div class="row"><b style="min-width:70px">✅ ผู้อนุมัติ</b>${f('apName','ชื่อ (ลงนามท้าย “อนุมัติ”) — พิมพ์ใหม่หรือเลือกจากที่เคยใช้',0,1)}${f('apPos','ตำแหน่ง ผู้อนุมัติ')}</div>
+  <details><summary class="note" style="cursor:pointer">ส่วนท้ายอื่น ๆ (เลขที่รับ / เรียน / สำเนาเรียน / ท้ายหนังสือ)</summary>
   <div class="row">${f('apNo','เลขที่รับ (เว้นว่าง = เขียนมือ)',150)}${f('apTo','เรียน (อนุมัติ)')}</div>
   <div class="row">${f('apCc','สำเนาเรียน')}</div>
-  <div class="row">${f('apName','ผู้อนุมัติ (ชื่อ) — พิมพ์ใหม่หรือเลือกจากที่เคยใช้',0,1)}${f('apPos','ตำแหน่ง')}</div>
   <div class="row">${f('foot1','ท้ายหนังสือ บรรทัด 1',150)}${f('foot2','บรรทัด 2',150)}</div></details>
   <div class="row" style="margin-top:6px">
     <label class="row note"><input type="checkbox" ${DOC.withMemo?'checked':''} onchange="docSet('withMemo',this.checked)"> พิมพ์หน้าบันทึกขออนุมัติ</label>
