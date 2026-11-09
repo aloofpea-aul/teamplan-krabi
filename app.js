@@ -163,7 +163,7 @@ function lockReason(date,cfg=CFG()){
   return'';
 }
 function hlBusy(date){return evOn(date).filter(e=>e.type==='L')}
-function hlUsed(unit,ym){return EV.filter(e=>e.type==='O'&&e.unit===unit&&e.start.startsWith(ym)&&e.hl).length}
+function hlUsed(unit,ym){return EV.filter(e=>e.start.startsWith(ym)&&((e.type==='O'&&e.unit===unit&&e.hl)||(e.type==='L'&&!e.ofOut&&e.src==='round'&&e.title==='ช่วยงาน '+unit+'.'))).length}
 function hlUnit(t){
   if(/ผกส/.test(t))return'ผกส';if(/ผปบ/.test(t))return'ผปบ';
   const m={อล:/อล\.|อ่าวลึก/,คท:/คท\.|คลองท่อม/,หคง:/หคง\.|เหนือคลอง/,กลต:/กลต\.|เกาะลันตา/,ขพ:/ขพ\.|เขาพนม/};
@@ -287,7 +287,7 @@ function vBook(){
   let ban;
   if(c.status==='published')ban=`<div class="banner turn">📢 ประกาศแผนเดือนนี้แล้ว</div>`;
   else if(done)ban=`<div class="banner turn">✅ ทุกหน่วยเลือกครบแล้ว — ขอแลกวันกับหน่วยอื่นได้ (อีกฝ่ายต้องกดยอมรับ)</div>`;
-  else if(myTurn)ban=`<div class="banner turn">ถึงคิว ${U[ME].name} แล้ว — ต้องเลือกให้ครบ ${quota} วัน (รอบที่ ${c.turn.round}) · เลือกแล้ว ${PICK.length}/${quota}<br><span style="font-weight:400;font-size:13px">หน่วยถัดไปจะเลือกได้เมื่อคุณยืนยันแล้ว · ยังไม่พร้อม? ยกคิวให้หน่วยถัดไปก่อนได้</span><div style="margin-top:8px"><button class="btn" onclick="yieldTurn()">⏭ ให้หน่วยถัดไปเลือกก่อน</button></div></div>`;
+  else if(myTurn)ban=`<div class="banner turn">ถึงคิว ${U[ME].name} แล้ว — ต้องเลือกให้ครบ ${quota} วัน (รอบที่ ${c.turn.round}) · เลือกแล้ว ${PICK.filter(p=>!p.hlOnly).length}/${quota}<br><span style="font-weight:400;font-size:13px">หน่วยถัดไปจะเลือกได้เมื่อคุณยืนยันแล้ว · ยังไม่พร้อม? ยกคิวให้หน่วยถัดไปก่อนได้</span><div style="margin-top:8px"><button class="btn" onclick="yieldTurn()">⏭ ให้หน่วยถัดไปเลือกก่อน</button></div></div>`;
   else ban=`<div class="banner wait">รอ <b style="color:${U[cu].c}">${U[cu].name}</b> เลือก (รอบที่ ${c.turn.round})${canPick?'':' · คุณมีสิทธิ์ดูอย่างเดียว'}</div>`;
   const hlLeft=(c.hlQuota[ME]||0)-hlUsed(ME,ym);
   v.innerHTML=`
@@ -308,8 +308,8 @@ function vBook(){
   })}
   ${myTurn&&upMobPending(ME).length?`<div class="card"><b>📋 งานในแผนหน่วย ${ME}. ที่ขอระดมทีม (ยังไม่ได้วัน)</b>${upMobPending(ME).map(x=>`<div class="note" style="margin-top:4px">• ${esc(x.title)} — อยากได้ประมาณ ${thDate(x.start)}${x.crew?' · '+esc(x.crew):''}</div>`).join('')}<div class="note" style="margin-top:6px">แตะวันว่างในปฏิทิน แล้วเลือกงานจากรายการนี้ได้เลย</div></div>`:''}
   ${myTurn&&!ADM?`<div class="card" style="margin-top:12px">
-    ${PICK.length?PICK.map((p,i)=>`<div class="row" style="border-bottom:1px solid var(--line);padding:6px 0"><b>${thDate(p.date)}</b><span>${esc(p.title)}</span><span class="note">${esc(p.crew)}</span>${p.hl?'⚡ฮอตไลน์':''}${p.photos.length?' 📷'+p.photos.length:''}<span class="sp"></span><button class="btn" onclick="PICK.splice(${i},1);vBook()">ลบ</button></div>`).join(''):'<span class="note">แตะวันสีเขียวเพื่อเลือก</span>'}
-    <div class="row" style="margin-top:10px"><span class="sp"></span><button class="btn ok" ${PICK.length===quota?'':'disabled'} onclick="confirmPick()">ยืนยัน ${PICK.length}/${quota} วัน → ส่งคิวถัดไป</button></div>
+    ${PICK.length?PICK.map((p,i)=>`<div class="row" style="border-bottom:1px solid var(--line);padding:6px 0"><b>${thDate(p.date)}</b><span>${esc(p.title)}</span><span class="note">${esc(p.crew)}</span>${p.hl?'⚡ฮอตไลน์':''}${p.hlOnly?'<span class="note">(ไม่ใช่วันดับไฟ)</span>':''}${p.photos.length?' 📷'+p.photos.length:''}<span class="sp"></span><button class="btn" onclick="PICK.splice(${i},1);vBook()">ลบ</button></div>`).join(''):'<span class="note">แตะวันสีเขียวเพื่อเลือก</span>'}
+    <div class="row" style="margin-top:10px"><span class="sp"></span><button class="btn ok" ${PICK.filter(p=>!p.hlOnly).length===quota?'':'disabled'} onclick="confirmPick()">ยืนยันวันดับไฟ ${PICK.filter(p=>!p.hlOnly).length}/${quota} วัน${PICK.some(p=>p.hlOnly)?' + กบ.06 '+PICK.filter(p=>p.hlOnly).length+' วัน':''} → ส่งคิวถัดไป</button></div>
   </div>`:''}`;
 }
 let ADM=false;
@@ -322,26 +322,37 @@ function bookClick(d){
   if(!adm&&c.status!=='open')return;
   const cu=curUnit();if(!adm&&(cu!==ME||rank()<2)){const why=lockReason(d,c);toast(why?('🔒 '+why):'ยังไม่ถึงคิวของคุณ');return}
   if(PICK.find(p=>p.date===d)){PICK=PICK.filter(p=>p.date!==d);return vBook()}
-  const why=lockReason(d,c);if(why)return toast('🔒 เลือกไม่ได้: '+why);
-  const quota=QT(c,ME);if(!adm&&PICK.length>=quota)return toast('รอบนี้เลือกได้ '+quota+' วัน');
-  const hlLeft=(c.hlQuota[ME]||0)-hlUsed(ME,S.active)-PICK.filter(p=>p.hl).length;
+  const why=lockReason(d,c);const hlOnlyDay=why.startsWith('จองแล้ว')||why==='เสาร์-อาทิตย์'||why==='วันอบรม'||why==='วันประชุม';
+  if(why&&!hlOnlyDay)return toast('🔒 เลือกไม่ได้: '+why);
+  const quota=QT(c,ME);const nOut=PICK.filter(p=>!p.hlOnly).length;
+  const hlLeft=(c.hlQuota[ME]||0)-hlUsed(ME,S.active)-PICK.filter(p=>p.hl||p.hlOnly).length;
   const hb=hlBusy(d);const hlOk=(adm||hlLeft>0)&&!hb.length;
+  const outOk=!why&&(adm||nOut<quota);
+  if(!outOk&&!hlOk)return toast(why?'🔒 เลือกไม่ได้: '+why:'รอบนี้เลือกวันดับไฟครบ '+quota+' วันแล้ว'+(hb.length?' · กบ.06 วันนี้มีงานแล้ว':' · สิทธิ์ กบ.06 หมดแล้ว'));
+  BKM=outOk?'out':'hl';
   const pend=upMobPending(ME);
-  openSheet(`<div class="row"><h3 class="sp">จองดับไฟ ${thDate(d)}</h3><button class="btn ghost" onclick="closeSheet()">✕</button></div>
+  openSheet(`<div class="row"><h3 class="sp">${thDate(d)}</h3><button class="btn ghost" onclick="closeSheet()">✕</button></div>
+  <div class="seg" style="margin-bottom:10px"><button id="bm_out" class="${BKM==='out'?'on':''}" ${outOk?'':'disabled'} onclick="bkMode('out')">🔴 ดับไฟระดมทีม</button><button id="bm_hl" class="${BKM==='hl'?'on':''}" ${hlOk?'':'disabled'} onclick="bkMode('hl')">⚡ กบ.06 ช่วยงานอย่างเดียว</button></div>
+  <div id="bHL" style="display:${BKM==='hl'?'block':'none'}" class="note">ลงเฉพาะ “กบ.๐๖ ช่วยงาน ${ME}.” ในวันนี้ — ไม่มีงานดับไฟ · ไม่นับเป็นวันดับไฟของรอบ · ใช้สิทธิ์ กบ.06 ${adm?'(แอดมิน ไม่จำกัด)':'เหลือ '+Math.max(0,hlLeft)+' วัน'}${hb.length?'<br>⚠ วันนี้ กบ.06 ไป '+esc(hb[0].title)+' แล้ว':''}</div>
+  <div id="bOUT" style="display:${BKM==='out'?'block':'none'}">
   ${pend.length?`<div class="f"><label>เลือกจากแผนหน่วย (งานที่ขอระดมทีม)</label><select id="bU" onchange="const x=UP().find(z=>z.id===this.value);document.getElementById('bT').value=x?x.title:'';if(x&&x.crew){const s=document.getElementById('bC');if(![...s.options].some(o=>o.text===x.crew))s.add(new Option(x.crew));s.value=x.crew}"><option value="">— พิมพ์งานใหม่ —</option>${pend.map(x=>`<option value="${x.id}">${esc(x.title)} (${+x.start.slice(8)} ${TMS[+x.start.slice(5,7)-1]})</option>`).join('')}</select></div>`:''}
   <div class="f"><label>งาน / สถานที่</label><input id="bT" placeholder="เช่น ปป.บ้านบากัน, ย้ายแนว..."></div>
   <div class="f"><label>ฟีดเดอร์ / ช่วงเวลาดับไฟ</label><input id="bF" placeholder="เช่น F3 08.30–16.00 น."></div>
   <div class="f"><label>ขอทีม / อุปกรณ์</label><select id="bC"><option>ทุกทีม+กระเช้าติดเครน</option><option>ทุกทีม+กระเช้าติดรถ</option><option>ทุกทีม+กระเช้า</option><option>กระเช้า07 ทุกสาขา</option><option>ทีมซ่อมย่อย+กระเช้า07</option><option>ทุกทีม</option></select></div>
   <label class="row" style="margin-bottom:10px;${hlOk?'':'opacity:.5'}"><input type="checkbox" id="bH" ${hlOk?'':'disabled'}> ⚡ ขอฮอตไลน์ กบ.06 ช่วยงาน <span class="note">${hb.length?'(วันนี้ กบ.06 ไป '+esc(hb[0].title)+')':hlLeft>0?'(เหลือสิทธิ์ '+hlLeft+' วัน)':'(สิทธิ์เดือนนี้หมดแล้ว)'}</span></label>
-  <div class="f"><label>แนบรูป / แผนผังหน้างาน</label><input type="file" id="bP" accept="image/*" multiple></div>
-  <div class="row"><button class="btn" onclick="closeSheet()">ยกเลิก</button><span class="sp"></span><button class="btn pri" onclick="${adm?'adminSavePick':'savePick'}('${d}')">${adm?'👑 บันทึกให้ '+ME+'.':'เลือกวันนี้'}</button></div>`);
+  <div class="f"><label>แนบรูป / แผนผังหน้างาน</label><input type="file" id="bP" accept="image/*" multiple></div></div>
+  <div class="row" style="margin-top:10px"><button class="btn" onclick="closeSheet()">ยกเลิก</button><span class="sp"></span><button class="btn pri" onclick="${adm?'adminSavePick':'savePick'}('${d}')">${adm?'👑 บันทึกให้ '+ME+'.':'เลือกวันนี้'}</button></div>`);
 }
+let BKM='out';
+function bkMode(m){BKM=m;['out','hl'].forEach(k=>document.getElementById('bm_'+k).classList.toggle('on',k===m));document.getElementById('bOUT').style.display=m==='out'?'block':'none';document.getElementById('bHL').style.display=m==='hl'?'block':'none'}
 async function savePick(d){
+  if(BKM==='hl'){PICK.push({date:d,hlOnly:true,title:'กบ.06 ช่วยงาน '+ME+'.',crew:'',hl:false,photos:[]});closeSheet();return vBook()}
   const t=document.getElementById('bT').value.trim()||'(ยังไม่ระบุงาน)';const f=document.getElementById('bF').value.trim();
   const p={date:d,title:t+(f?' '+f:''),crew:document.getElementById('bC').value,hl:document.getElementById('bH').checked,photos:await filesToData(document.getElementById('bP')),upId:document.getElementById('bU')?.value||''};
   PICK.push(p);closeSheet();vBook();
 }
 async function adminSavePick(d){
+  if(BKM==='hl'){closeSheet();try{await api('adminPick',{unit:ME,item:{date:d,hlOnly:true}});toast('ลง กบ.06 ช่วยงาน '+ME+'. แล้ว');await reload(true)}catch(e){toast('⚠ '+e.message,4500)}return}
   const t=document.getElementById('bT').value.trim()||'(ยังไม่ระบุงาน)';const f=document.getElementById('bF').value.trim();
   const it={date:d,title:t+(f?' '+f:''),crew:document.getElementById('bC').value,hl:document.getElementById('bH').checked,photos:await filesToData(document.getElementById('bP')),upId:document.getElementById('bU')?.value||''};
   closeSheet();try{await api('adminPick',{unit:ME,item:it});toast('บันทึกให้ '+U[ME].name+' แล้ว');await reload(true)}catch(e){toast('⚠ '+e.message,4500)}

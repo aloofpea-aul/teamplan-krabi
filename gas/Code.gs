@@ -232,6 +232,10 @@ function lockReason_(evs, cfg, d) {
   if (ev.some(e => e.type === 'O')) return 'จองแล้ว';
   return '';
 }
+// สิทธิ์ กบ.06 ที่ใช้ไปในเดือน = ขอพร้อมวันดับไฟ + ขอช่วยงานอย่างเดียว (ที่หน่วยขอเองตอนเลือกวัน)
+function hlUsed_(evs, unit, month) {
+  return evs.filter(e => e.start.startsWith(month) && ((e.type === 'O' && e.unit === unit && (e.hl === true || e.hl === 'TRUE')) || (e.type === 'L' && !e.ofOut && e.src === 'round' && e.title === 'ช่วยงาน ' + unit + '.'))).length;
+}
 function allDone_(cfg) { return cfg.turn.round > cfg.rounds; }
 // จำนวนวันที่เลือกได้ต่อรอบ (0 = ข้ามหน่วยนี้) · ลำดับของรอบปัจจุบัน (ยกคิวได้เฉพาะรอบนั้น)
 function q_(cfg, unit) { const v = cfg.perRound[unit]; return v === undefined || v === null || v === '' ? 1 : +v; }
@@ -255,11 +259,22 @@ function pick_(u, p) {
   const cur = cur_(cfg);
   if (cur !== unit) throw new Error('ยังไม่ถึงคิวของ ' + unit + '. (ตอนนี้คิว ' + cur + '.)');
   const quota = q_(cfg, unit);
-  if (!p.items || p.items.length !== quota) throw new Error('ต้องเลือกให้ครบ ' + quota + ' วัน');
+  const outs = (p.items || []).filter(it => !it.hlOnly), hlOnly = (p.items || []).filter(it => it.hlOnly);
+  if (outs.length !== quota) throw new Error('ต้องเลือกวันดับไฟให้ครบ ' + quota + ' วัน');
   const evs = rows_('Events');
-  let hlLeft = (cfg.hlQuota[unit] || 0) - evs.filter(e => e.type === 'O' && e.unit === unit && e.start.startsWith(month) && (e.hl === true || e.hl === 'TRUE')).length;
+  let hlLeft = (cfg.hlQuota[unit] || 0) - hlUsed_(evs, unit, month);
   const now = new Date().toISOString(); const dates = [];
-  p.items.forEach(it => {
+  hlOnly.forEach(it => {
+    if (!String(it.date).startsWith(month)) throw new Error('วันที่ไม่อยู่ในเดือนที่เปิด');
+    const ev = evOn_(evs, it.date);
+    if (ev.some(e => e.type === 'H')) throw new Error(it.date + ' เป็นวันหยุด');
+    if (ev.some(e => e.type === 'L')) throw new Error(it.date + ' กบ.06 มีงานแล้ว');
+    if (hlLeft <= 0) throw new Error('สิทธิ์ฮอตไลน์ กบ.06 เดือนนี้หมดแล้ว');
+    hlLeft--;
+    const l = {id: newId_(), start: it.date, end: it.date, type: 'L', unit: '', title: 'ช่วยงาน ' + unit + '.', crew: '', hl: '', photos: '', src: 'round', createdBy: u.name, createdAt: now, ofOut: ''};
+    append_('Events', l); evs.push(l);
+  });
+  outs.forEach(it => {
     if (!it.date.startsWith(month)) throw new Error('วันที่ไม่อยู่ในเดือนที่เปิด');
     const why = lockReason_(evs, cfg, it.date); if (why) throw new Error(it.date + ' เลือกไม่ได้: ' + why);
     if (dates.includes(it.date)) throw new Error('เลือกวันซ้ำ');
@@ -289,6 +304,14 @@ function adminPick_(u, p) {
   const month = it.date.slice(0, 7);
   const cfg = getCfg_('round:' + month, null) || {allowWeekend: false, lockTraining: true, lockMeeting: true};
   const evs = rows_('Events');
+  if (it.hlOnly) {
+    const ev = evOn_(evs, it.date);
+    if (ev.some(e => e.type === 'L')) throw new Error(it.date + ' กบ.06 มีงานแล้ว');
+    append_('Events', {id: newId_(), start: it.date, end: it.date, type: 'L', unit: '', title: 'ช่วยงาน ' + unit + '.', crew: '', hl: '', photos: '', src: 'admin', createdBy: u.name, createdAt: new Date().toISOString(), ofOut: ''});
+    audit_(u, 'ลง กบ.06 ช่วยงาน ' + unit + ' (แอดมิน)', it.date);
+    push_(idsOfUnit_(unit), '👑 ' + u.name + ' ลง กบ.06 ช่วยงาน ' + UNAME[unit] + '\n' + thD_(it.date));
+    return {ok: true};
+  }
   const why = lockReason_(evs, cfg, it.date); if (why) throw new Error(it.date + ' ลงไม่ได้: ' + why);
   const hl = !!it.hl && !evOn_(evs, it.date).some(e => e.type === 'L');
   const now = new Date().toISOString(); const id = newId_();
