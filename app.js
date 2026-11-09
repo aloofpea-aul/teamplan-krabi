@@ -650,7 +650,7 @@ function docCal(ym){
   const keep=e=>e.type!=='P'&&(DOC.withX||e.type!=='W');
   const multiL=EV.filter(e=>e.type==='L'&&e.start!==e.end&&e.end>=days[0]&&e.start<=days[days.length-1]);
   const nWeeks=cells.length/7;const cellH=Math.floor((168-nWeeks*5.5)/nWeeks)-2;
-  const CW=[18,48.2,48.2,48.2,48.2,48.2,18];// มม. รวม 277 = A4 แนวนอน ขอบซ้ายขวา 10 มม.
+  const CW=[30,42.5,45.5,44,44,44,30];// มม. รวม 280 ตามต้นแบบ Word (A4 แนวนอน)
   let rows='';
   for(let r=0;r<cells.length;r+=7){
     const wk=cells.slice(r,r+7);
@@ -700,7 +700,7 @@ function docPanel(){
   <div class="row" style="margin-top:6px">
     <label class="row note"><input type="checkbox" ${DOC.withMemo?'checked':''} onchange="docSet('withMemo',this.checked)"> พิมพ์หน้าบันทึกขออนุมัติ</label>
     <label class="row note"><input type="checkbox" ${DOC.withX?'checked':''} onchange="docSet('withX',this.checked)"> รวมงานนอกแผนระดมทีมในปฏิทิน</label></div>
-  <p class="note">ฟอนต์ TH Sarabun New ขนาด ๑๖ · ได้ ๒ หน้าเสมอ (ถ้าตารางแน่นเกิน ระบบจะย่อตัวอักษรในตารางลงเท่าที่จำเป็น) · หน้า ๑ บันทึกข้อความ A4 แนวตั้ง · หน้า ๒ ตาราง A4 แนวนอน (กระดาษหมุนให้อัตโนมัติ) · ตอนสั่งพิมพ์ ตั้ง ระยะขอบ = ไม่มี และ สเกล = 100%</p></div>`;
+  <p class="note">ฟอนต์ TH Sarabun New · บันทึกข้อความ ๑๖ · ตาราง ๑๔ (ย่อลงเองถ้างานแน่น) · ได้ ๒ หน้าเสมอ · หน้า ๑ บันทึกข้อความ A4 แนวตั้ง · หน้า ๒ ตาราง A4 แนวนอน (กระดาษหมุนให้อัตโนมัติ) · ตอนสั่งพิมพ์ ตั้ง ระยะขอบ = ไม่มี และ สเกล = 100%</p></div>`;
 }
 function docView(ym){
   docInit();
@@ -711,7 +711,7 @@ function fitDoc(){const w=document.getElementById('docWrap');if(!w)return;const 
   // ให้ตารางอยู่ในหน้าเดียว: เริ่ม ๑๖ แล้วลดทีละ ๐.๕ จนพอดี
   const rot=pa.querySelector('.rot'),ct=pa.querySelector('.ct');
   if(rot&&ct){const avail=rot.clientHeight-rot.querySelector('h2').offsetHeight-8;ct.style.height=avail+'px';
-    let fs=16;ct.style.fontSize=fs+'pt';while(ct.offsetHeight>avail+1&&fs>10){fs-=.5;ct.style.fontSize=fs+'pt'}rot.dataset.fs=fs}
+    let fs=14;ct.style.fontSize=fs+'pt';while(ct.offsetHeight>avail+1&&fs>10){fs-=.5;ct.style.fontSize=fs+'pt'}rot.dataset.fs=fs}
   const memo=pa.querySelector('.memo');if(memo){let fs=16;memo.style.fontSize=fs+'pt';const over=()=>{const e=memo.querySelector('.endorse'),f=memo.querySelector('.foot');return e.getBoundingClientRect().bottom>f.getBoundingClientRect().top-2};while(over()&&fs>14){fs-=.5;memo.style.fontSize=fs+'pt'}memo.dataset.fs=fs}
   pa.style.zoom=Math.min(1,(w.clientWidth-4)/1123)}
 addEventListener('beforeprint',()=>{const pa=document.getElementById('printArea');if(pa)pa.style.zoom=1});
