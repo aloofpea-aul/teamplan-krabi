@@ -127,11 +127,26 @@ async function start(){
   }catch(e){if(!TOKEN)showLogin('⚠ LINE: '+esc(e.message))}
 }
 
+// ---------- ผู้ใช้ใหม่: เลือกสังกัดเอง ----------
+let PEND_EDIT=false;
+function pendView(){
+  const me=S.me,t=document.getElementById('pendTitle'),b=document.getElementById('pendBody');
+  if(me.status==='blocked'){t.textContent='บัญชีถูกระงับ';b.innerHTML='<p>ติดต่อผู้ดูแลระบบ</p>';return}
+  if(!me.unit||PEND_EDIT){t.textContent='เลือกสังกัดของคุณ';
+    b.innerHTML=`<p>สวัสดี <b>${esc(me.name)}</b> — เลือกหน่วยงานที่คุณสังกัด</p>
+    <div style="display:grid;gap:6px;margin:10px 0">${UNITS.map(u=>`<button class="btn" style="justify-content:flex-start;border-left:5px solid ${u.c};${me.unit===u.id?'background:#f3e8f1;font-weight:700':''}" onclick="pendSet('${u.id}')">${u.name}</button>`).join('')}</div>
+    <p class="note">ผู้ดูแลจะกำหนดสิทธิ์การใช้งานให้ภายหลัง</p>`;return}
+  t.textContent='รอผู้ดูแลอนุมัติ';
+  b.innerHTML=`<p>คุณ <b>${esc(me.name)}</b><br>สังกัด <b style="color:${U[me.unit].c}">${U[me.unit].name}</b> <a href="#" onclick="PEND_EDIT=true;pendView();return false">เปลี่ยน</a></p>
+  <p>ส่งคำขอแล้ว — เมื่อผู้ดูแลกำหนดสิทธิ์ให้ จะเข้าใช้งานได้ทันที (แจ้งทาง LINE)</p>`;
+}
+async function pendSet(unit){try{await api('setMyUnit',{unit});PEND_EDIT=false;S.me.unit=unit;pendView();toast('ส่งคำขอถึงผู้ดูแลแล้ว')}catch(e){toast('⚠ '+e.message,4500)}}
+
 // ---------- shell ----------
 function boot(){
   document.getElementById('login').style.display='none';
   const p=document.getElementById('pending');
-  if(S.me.status!=='approved'){p.style.display='flex';document.getElementById('pendName').textContent=S.me.name;return}
+  if(S.me.status!=='approved'){p.style.display='flex';pendView();return}
   p.style.display='none';
   const who=document.getElementById('who');
   if(isCo()){

@@ -200,10 +200,10 @@ td.c,th.c{text-align:center}
   <div class="note" style="margin-top:12px;text-align:left;line-height:1.6">• ครั้งแรก: ระบบส่งคำขอให้ผู้ดูแลอนุมัติและกำหนดหน่วยงาน<br>• ไม่ใช้รหัสผ่าน</div>
  </div></div>
 <div id="pending" style="position:fixed;inset:0;background:#f4f1f5;z-index:79;display:none;align-items:center;justify-content:center;padding:20px">
- <div class="card" style="max-width:380px;text-align:center"><div style="font-size:40px">⏳</div><b style="font-size:18px">รอผู้ดูแลอนุมัติ</b>
- <p>คุณ <b id="pendName"></b> ส่งคำขอเข้าใช้งานแล้ว<br>เมื่อผู้ดูแลกำหนดหน่วยงานและสิทธิ์ให้ จะเข้าใช้งานได้ทันที</p>
+ <div class="card" style="max-width:380px;text-align:center"><div style="font-size:40px">⏳</div><b style="font-size:18px" id="pendTitle">รอผู้ดูแลอนุมัติ</b>
+ <div id="pendBody"></div>
  <button class="btn pri" onclick="reload().catch(e=>toast(e.message))">ตรวจสอบอีกครั้ง</button> <button class="btn" onclick="logout()">ออกจากระบบ</button></div></div>
 <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-<script src="app.js?v=15"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>

@@ -108,7 +108,7 @@ function route_(p) {
   }
   const u = auth_(p.token);
   if (!u) return {ok: false, error: 'AUTH'};
-  if (u.status !== 'approved' && p.action !== 'state') return {ok: false, error: 'PENDING'};
+  if (u.status !== 'approved' && p.action !== 'state' && !(p.action === 'setMyUnit' && u.status === 'pending')) return {ok: false, error: 'PENDING'};
   const lock = LockService.getScriptLock();
   const write = !['state'].includes(p.action);
   if (write) lock.waitLock(20000);
@@ -117,6 +117,7 @@ function route_(p) {
       case 'state': return state_(u);
       case 'pick': return pick_(u, p);
       case 'yield': return yield_(u, p);
+      case 'setMyUnit': return setMyUnit_(u, p);
       case 'adminPick': return adminPick_(u, p);
       case 'swapReq': return swapReq_(u, p);
       case 'swapAns': return swapAns_(u, p);
@@ -148,7 +149,6 @@ function login_(idToken) {
       const first = !users.some(x => x.role === 'admin');
       u = {lineId: j.sub, name: j.name || 'LINE user', pic: j.picture || '', unit: first ? 'อล' : '', role: first ? 'admin' : '', status: first ? 'approved' : 'pending', createdAt: now, lastLogin: now};
       append_('Users', u); audit_(u, first ? 'สร้างแอดมินระบบ' : 'ขอเข้าใช้งาน', u.name);
-      if (!first) push_(idsAdmins_(), '👤 ' + u.name + ' ขอเข้าใช้งานแผนระดมทีม\nเข้าแท็บ แอดมิน → สิทธิ์ผู้ใช้ เพื่ออนุมัติ');
     } else update_('Users', u._row, {name: j.name || u.name, pic: j.picture || u.pic, lastLogin: now});
     const token = Utilities.getUuid() + Utilities.getUuid();
     append_('Sessions', {token, lineId: j.sub, expires: Date.now() + 60 * 864e5});
@@ -478,6 +478,16 @@ function editEvent_(u, p) {
   if (!own && !(r.type === 'O' ? isCo_(u) : isPlanner_(u))) throw new Error('ไม่มีสิทธิ์แก้ไข');
   update_('Events', r._row, {title: p.title, crew: p.crew});
   if (!own) audit_(u, 'แก้ไขแทน', r.start + ' ' + r.unit + ' → ' + p.title);
+  return {ok: true};
+}
+// ผู้ใช้ใหม่เลือกสังกัดเองหลังล็อกอิน LINE → แอดมินแค่กำหนดสิทธิ์
+function setMyUnit_(u, p) {
+  if (u.status !== 'pending') throw new Error('เปลี่ยนหน่วยงานได้เฉพาะตอนรออนุมัติ — ติดต่อแอดมิน');
+  if (UNITS.indexOf(p.unit) < 0) throw new Error('ไม่พบหน่วยงาน');
+  const t = rows_('Users').find(x => x.lineId === u.lineId); const first = !t.unit;
+  update_('Users', t._row, {unit: p.unit});
+  audit_(u, 'เลือกสังกัด', u.name + ' → ' + p.unit);
+  push_(idsAdmins_(), '👤 ' + u.name + ' (' + UNAME[p.unit] + ') ' + (first ? 'ขอเข้าใช้งาน' : 'เปลี่ยนสังกัด') + 'แผนระดมทีม\nเข้าแท็บ แอดมิน → สิทธิ์ผู้ใช้ เพื่อกำหนดสิทธิ์และอนุมัติ');
   return {ok: true};
 }
 function setUser_(u, p) {
