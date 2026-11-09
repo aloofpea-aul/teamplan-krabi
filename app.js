@@ -314,7 +314,7 @@ function vBook(){
 }
 let ADM=false;
 function admCard(){return isCo()?`<div class="card" style="border:2px solid ${ADM?'#d97706':'transparent'}"><label class="row"><input type="checkbox" ${ADM?'checked':''} onchange="ADM=this.checked;PICK=[];vBook()"> <b>👑 ลงวันแทนหน่วยงาน (แอดมิน/โคแอดมิน) — ไม่ต้องรอคิว</b></label>
-  ${ADM?`<div class="seg" style="margin-top:8px;flex-wrap:wrap">${UNITS.map(u=>`<button class="${ME===u.id?'on':''}" onclick="ME='${u.id}';const w=document.getElementById('whoSel');if(w)w.value=ME;vBook()">${u.name.replace(/^ผปร\.กฟส\.|\.กฟจ\.กบ\./g,'')}</button>`).join('')}</div>
+  ${ADM?`<div class="seg" style="margin-top:8px;flex-wrap:wrap">${UNITS.map(u=>`<button class="${ME===u.id?'on':''}" onclick="ME='${u.id}';const w=document.getElementById('whoSel');if(w)w.value=ME;vBook()">${u.name.replace(/^ผปร\.กฟส\.|กฟจ\.กบ\./g,'')}</button>`).join('')}</div>
   <div class="note" style="margin-top:6px">แตะวันว่างในปฏิทิน → กรอกงาน → บันทึกทันทีในนาม <b style="color:${U[ME].c}">${U[ME].name}</b> · ไม่ใช้คิว ไม่ตัดจำนวนวันของรอบ ไม่เลื่อนคิว · หน่วยนั้นได้แจ้งเตือน LINE</div>`:''}</div>`:''}
 function bookClick(d){
   const c=CFG();const adm=ADM&&isCo();
