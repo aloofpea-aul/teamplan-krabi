@@ -649,12 +649,13 @@ function docCal(ym){
   const cells=[];for(let i=0;i<first;i++)cells.push('');days.forEach(d=>cells.push(d));while(cells.length%7)cells.push('');
   const keep=e=>e.type!=='P'&&(DOC.withX||e.type!=='W');
   const multiL=EV.filter(e=>e.type==='L'&&e.start!==e.end&&e.end>=days[0]&&e.start<=days[days.length-1]);
-  const nWeeks=cells.length/7;const cellH=Math.floor((166-nWeeks*5)/nWeeks);
+  const nWeeks=cells.length/7;const cellH=Math.floor((168-nWeeks*5.5)/nWeeks)-2;
+  const CW=[18,48.2,48.2,48.2,48.2,48.2,18];// มม. รวม 277 = A4 แนวนอน ขอบซ้ายขวา 10 มม.
   let rows='';
   for(let r=0;r<cells.length;r+=7){
     const wk=cells.slice(r,r+7);
     rows+='<tr class="wk">'+wk.map(d=>{
-      if(!d)return`<td style="height:${cellH}mm"></td>`;
+      if(!d)return`<td></td>`;
       const ev=evOn(d).filter(keep);let h=`<div class="dn">${thaiNum(+d.slice(8))}</div><div class="cc">`;
       ev.filter(e=>e.type!=='L').forEach(e=>{
         if(e.type==='H')h+=`<div class="hol">${T(e.title)}</div>`;
@@ -665,19 +666,20 @@ function docCal(ym){
       h+='</div>';
       const l1=ev.filter(e=>e.type==='L'&&e.start===e.end);
       if(l1.length)h+=`<div class="hl1">${l1.map(l=>'กบ.๐๖ '+(l.title.startsWith('ช่วยงาน')?'':'ไป ')+T(l.title)).join('<br>')}</div>`;
-      return`<td style="height:${cellH}mm">${h}</td>`}).join('')+'</tr>';
+      return`<td>${h}</td>`}).join('')+'</tr>';
     // แถวลูกศร กบ.06 หลายวัน
     const spans=[];
     multiL.forEach(e=>{const idx=wk.map((d,i)=>d&&d>=e.start&&d<=e.end?i:-1).filter(i=>i>=0);if(idx.length)spans.push({a:idx[0],b:idx[idx.length-1],t:e.title})});
-    let ar='<tr class="ar">';let c=0;
-    spans.sort((p,q)=>p.a-q.a).forEach(s=>{if(s.a<c)return;if(s.a>c)ar+=`<td colspan="${s.a-c}"></td>`;
-      ar+=`<td colspan="${s.b-s.a+1}"><div class="arrow"><span>กบ.๐๖ ${s.t.startsWith('ช่วยงาน')?'':'ไป '}${T(s.t)}</span><i></i></div></td>`;c=s.b+1});
-    if(c<7)ar+=`<td colspan="${7-c}"></td>`;
-    rows+=ar+'</tr>';
+    // แถวลูกศร: ช่องครบ 7 ช่องเสมอ (เส้นตารางไม่ขาด) ลูกศรวางทับข้ามช่อง
+    const cellA=Array(7).fill('');let c=0;
+    spans.sort((p,q)=>p.a-q.a).forEach(s=>{if(s.a<c)return;
+      const w=CW.slice(s.a,s.b+1).reduce((x,y)=>x+y,0)-3;
+      cellA[s.a]=`<div class="arrow" style="width:${w}mm"><span>กบ.๐๖ ${s.t.startsWith('ช่วยงาน')?'':'ไป '}${T(s.t)}</span><i></i></div>`;c=s.b+1});
+    rows+='<tr class="ar">'+cellA.map(x=>`<td>${x}</td>`).join('')+'</tr>';
   }
   return `<div class="pg land"><div class="rot">
     <h2>แผนงาน กฟจ.กระบี่ ประจำเดือน${TM[m-1]} ${thaiNum(y+543)}</h2>
-    <table class="ct"><colgroup><col style="width:8.5%">${'<col style="width:16.6%">'.repeat(5)}<col style="width:8.5%"></colgroup>
+    <table class="ct"><colgroup>${CW.map(w=>`<col style="width:${(w/2.77).toFixed(3)}%">`).join('')}</colgroup>
     <tr>${TD.map(t=>`<th>${t}</th>`).join('')}</tr>${rows}</table></div></div>`;
 }
 function docPanel(){
@@ -698,7 +700,7 @@ function docPanel(){
   <div class="row" style="margin-top:6px">
     <label class="row note"><input type="checkbox" ${DOC.withMemo?'checked':''} onchange="docSet('withMemo',this.checked)"> พิมพ์หน้าบันทึกขออนุมัติ</label>
     <label class="row note"><input type="checkbox" ${DOC.withX?'checked':''} onchange="docSet('withX',this.checked)"> รวมงานนอกแผนระดมทีมในปฏิทิน</label></div>
-  <p class="note">ฟอนต์ TH Sarabun New ขนาด ๑๖ · ได้ ๒ หน้าเสมอ (ถ้าตารางแน่นเกิน ระบบจะย่อตัวอักษรในตารางลงเท่าที่จำเป็น) · พิมพ์บนกระดาษ A4 แนวตั้ง</p></div>`;
+  <p class="note">ฟอนต์ TH Sarabun New ขนาด ๑๖ · ได้ ๒ หน้าเสมอ (ถ้าตารางแน่นเกิน ระบบจะย่อตัวอักษรในตารางลงเท่าที่จำเป็น) · หน้า ๑ บันทึกข้อความ A4 แนวตั้ง · หน้า ๒ ตาราง A4 แนวนอน (กระดาษหมุนให้อัตโนมัติ) · ตอนสั่งพิมพ์ ตั้ง ระยะขอบ = ไม่มี และ สเกล = 100%</p></div>`;
 }
 function docView(ym){
   docInit();
@@ -708,9 +710,10 @@ function fitDoc(){const w=document.getElementById('docWrap');if(!w)return;const 
   pa.style.zoom=1;
   // ให้ตารางอยู่ในหน้าเดียว: เริ่ม ๑๖ แล้วลดทีละ ๐.๕ จนพอดี
   const rot=pa.querySelector('.rot'),ct=pa.querySelector('.ct');
-  if(rot&&ct){let fs=16;ct.style.fontSize=fs+'pt';while(rot.scrollHeight>rot.clientHeight+1&&fs>10){fs-=.5;ct.style.fontSize=fs+'pt'}rot.dataset.fs=fs}
+  if(rot&&ct){const avail=rot.clientHeight-rot.querySelector('h2').offsetHeight-8;ct.style.height=avail+'px';
+    let fs=16;ct.style.fontSize=fs+'pt';while(ct.offsetHeight>avail+1&&fs>10){fs-=.5;ct.style.fontSize=fs+'pt'}rot.dataset.fs=fs}
   const memo=pa.querySelector('.memo');if(memo){let fs=16;memo.style.fontSize=fs+'pt';const over=()=>{const e=memo.querySelector('.endorse'),f=memo.querySelector('.foot');return e.getBoundingClientRect().bottom>f.getBoundingClientRect().top-2};while(over()&&fs>14){fs-=.5;memo.style.fontSize=fs+'pt'}memo.dataset.fs=fs}
-  pa.style.zoom=Math.min(1,(w.clientWidth-4)/794)}
+  pa.style.zoom=Math.min(1,(w.clientWidth-4)/1123)}
 addEventListener('beforeprint',()=>{const pa=document.getElementById('printArea');if(pa)pa.style.zoom=1});
 addEventListener('afterprint',()=>fitDoc());
 
