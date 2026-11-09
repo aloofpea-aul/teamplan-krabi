@@ -267,7 +267,7 @@ function allDone(){const c=CFG();return c.turn.round>c.rounds}
 function vBook(){
   const v=document.getElementById('view');
   const c=S.active&&CFG();
-  if(!c||c.status==='setup'){v.innerHTML=`<div class="card"><b>ยังไม่เปิดรอบเลือกวัน</b><p class="note">ผกส./ผปบ. จะเปิดรอบเลือกวันของเดือนถัดไป แล้วระบบจะแจ้งให้ทราบ</p>${isPlanner()?'<button class="btn pri" onclick="go(\'set\')">ไปตั้งค่ารอบ</button>':''}</div>`;return}
+  if(!c||c.status==='setup'){v.innerHTML=`<div class="card"><b>ยังไม่เปิดรอบเลือกวัน</b><p class="note">ผกส./ผปบ. จะเปิดรอบเลือกวันของเดือนถัดไป แล้วระบบจะแจ้งให้ทราบ</p>${isPlanner()?'<button class="btn pri" onclick="go(\'set\')">ไปตั้งค่ารอบ</button>':''}</div>`;if(!c||!(ADM&&isCo())){if(c&&isCo())v.innerHTML+=admCard();return}}
   const ym=S.active;const [y,m]=ym.split('-').map(Number);
   const done=c.status!=='open';const cu=done?'':curUnit();
   const canPick=rank()>=2;const myTurn=!done&&cu===ME&&canPick&&(ME===S.me.unit||isCo());const quota=QT(c,cu);
@@ -295,32 +295,37 @@ function vBook(){
     <div class="row"><b style="font-size:16px">เลือกวันดับไฟระดมทีม เดือน${TM[m-1]} ${y+543}</b><span class="sp"></span>${c.deadline?`<span class="note">ปิดรับ ${thDate(c.deadline)}</span>`:''}<button class="btn" onclick="reload().catch(e=>toast(e.message))">🔄</button></div>
     ${q}
   </div>
-  ${ban}
-  ${c.status==='swap'?swapPanel():''}
+  ${admCard()}
+  ${ADM&&isCo()?'':ban}
+  ${c.status==='swap'&&!ADM?swapPanel():''}
   <div class="card"><div class="row"><b>ปฏิทิน ${TM[m-1]} ${y+543}</b><span class="sp"></span><span class="note">🟩 เลือกได้ · ▨ ล็อก · 🟨 ที่กำลังเลือก</span></div>
   <div class="note" style="margin-top:4px">สิทธิ์ฮอตไลน์ กบ.06 ของ ${ME}. เดือนนี้: เหลือ ${Math.max(0,hlLeft)} / ${c.hlQuota[ME]||0} วัน (ขอพร้อมกับตอนเลือกวัน)</div></div>
   ${calGrid(ym,d=>{
     const why=lockReason(d,c);const sel=PICK.find(p=>p.date===d)||SWP.mine===d||SWP.theirs===d;
     const booked=why.startsWith('จองแล้ว');
-    const cls=sel?'sel':why?(done&&booked?'':'lk'):(myTurn?'av':'');
+    const cls=sel?'sel':why?(done&&booked?'':'lk'):((myTurn||(ADM&&isCo()))?'av':'');
     return dayCell(d,cls,why&&!sel&&!(done&&booked)?`<div class="why">🔒 ${esc(why)}</div>`:'');
   })}
   ${myTurn&&upMobPending(ME).length?`<div class="card"><b>📋 งานในแผนหน่วย ${ME}. ที่ขอระดมทีม (ยังไม่ได้วัน)</b>${upMobPending(ME).map(x=>`<div class="note" style="margin-top:4px">• ${esc(x.title)} — อยากได้ประมาณ ${thDate(x.start)}${x.crew?' · '+esc(x.crew):''}</div>`).join('')}<div class="note" style="margin-top:6px">แตะวันว่างในปฏิทิน แล้วเลือกงานจากรายการนี้ได้เลย</div></div>`:''}
-  ${myTurn?`<div class="card" style="margin-top:12px">
+  ${myTurn&&!ADM?`<div class="card" style="margin-top:12px">
     ${PICK.length?PICK.map((p,i)=>`<div class="row" style="border-bottom:1px solid var(--line);padding:6px 0"><b>${thDate(p.date)}</b><span>${esc(p.title)}</span><span class="note">${esc(p.crew)}</span>${p.hl?'⚡ฮอตไลน์':''}${p.photos.length?' 📷'+p.photos.length:''}<span class="sp"></span><button class="btn" onclick="PICK.splice(${i},1);vBook()">ลบ</button></div>`).join(''):'<span class="note">แตะวันสีเขียวเพื่อเลือก</span>'}
     <div class="row" style="margin-top:10px"><span class="sp"></span><button class="btn ok" ${PICK.length===quota?'':'disabled'} onclick="confirmPick()">ยืนยัน ${PICK.length}/${quota} วัน → ส่งคิวถัดไป</button></div>
   </div>`:''}`;
 }
+let ADM=false;
+function admCard(){return isCo()?`<div class="card" style="border:2px solid ${ADM?'#d97706':'transparent'}"><label class="row"><input type="checkbox" ${ADM?'checked':''} onchange="ADM=this.checked;PICK=[];vBook()"> <b>👑 ลงวันแทนหน่วยงาน (แอดมิน/โคแอดมิน) — ไม่ต้องรอคิว</b></label>
+  ${ADM?`<div class="seg" style="margin-top:8px;flex-wrap:wrap">${UNITS.map(u=>`<button class="${ME===u.id?'on':''}" onclick="ME='${u.id}';const w=document.getElementById('whoSel');if(w)w.value=ME;vBook()">${u.name.replace(/^ผปร\.กฟส\.|\.กฟจ\.กบ\./g,'')}</button>`).join('')}</div>
+  <div class="note" style="margin-top:6px">แตะวันว่างในปฏิทิน → กรอกงาน → บันทึกทันทีในนาม <b style="color:${U[ME].c}">${U[ME].name}</b> · ไม่ใช้คิว ไม่ตัดจำนวนวันของรอบ ไม่เลื่อนคิว · หน่วยนั้นได้แจ้งเตือน LINE</div>`:''}</div>`:''}
 function bookClick(d){
-  const c=CFG();
-  if(c.status==='swap')return swapClick(d);
-  if(c.status!=='open')return;
-  const cu=curUnit();if(cu!==ME||rank()<2){const why=lockReason(d,c);toast(why?('🔒 '+why):'ยังไม่ถึงคิวของคุณ');return}
+  const c=CFG();const adm=ADM&&isCo();
+  if(!adm&&c.status==='swap')return swapClick(d);
+  if(!adm&&c.status!=='open')return;
+  const cu=curUnit();if(!adm&&(cu!==ME||rank()<2)){const why=lockReason(d,c);toast(why?('🔒 '+why):'ยังไม่ถึงคิวของคุณ');return}
   if(PICK.find(p=>p.date===d)){PICK=PICK.filter(p=>p.date!==d);return vBook()}
   const why=lockReason(d,c);if(why)return toast('🔒 เลือกไม่ได้: '+why);
-  const quota=QT(c,ME);if(PICK.length>=quota)return toast('รอบนี้เลือกได้ '+quota+' วัน');
+  const quota=QT(c,ME);if(!adm&&PICK.length>=quota)return toast('รอบนี้เลือกได้ '+quota+' วัน');
   const hlLeft=(c.hlQuota[ME]||0)-hlUsed(ME,S.active)-PICK.filter(p=>p.hl).length;
-  const hb=hlBusy(d);const hlOk=hlLeft>0&&!hb.length;
+  const hb=hlBusy(d);const hlOk=(adm||hlLeft>0)&&!hb.length;
   const pend=upMobPending(ME);
   openSheet(`<div class="row"><h3 class="sp">จองดับไฟ ${thDate(d)}</h3><button class="btn ghost" onclick="closeSheet()">✕</button></div>
   ${pend.length?`<div class="f"><label>เลือกจากแผนหน่วย (งานที่ขอระดมทีม)</label><select id="bU" onchange="const x=UP().find(z=>z.id===this.value);document.getElementById('bT').value=x?x.title:'';if(x&&x.crew){const s=document.getElementById('bC');if(![...s.options].some(o=>o.text===x.crew))s.add(new Option(x.crew));s.value=x.crew}"><option value="">— พิมพ์งานใหม่ —</option>${pend.map(x=>`<option value="${x.id}">${esc(x.title)} (${+x.start.slice(8)} ${TMS[+x.start.slice(5,7)-1]})</option>`).join('')}</select></div>`:''}
@@ -329,12 +334,17 @@ function bookClick(d){
   <div class="f"><label>ขอทีม / อุปกรณ์</label><select id="bC"><option>ทุกทีม+กระเช้าติดเครน</option><option>ทุกทีม+กระเช้าติดรถ</option><option>ทุกทีม+กระเช้า</option><option>กระเช้า07 ทุกสาขา</option><option>ทีมซ่อมย่อย+กระเช้า07</option><option>ทุกทีม</option></select></div>
   <label class="row" style="margin-bottom:10px;${hlOk?'':'opacity:.5'}"><input type="checkbox" id="bH" ${hlOk?'':'disabled'}> ⚡ ขอฮอตไลน์ กบ.06 ช่วยงาน <span class="note">${hb.length?'(วันนี้ กบ.06 ไป '+esc(hb[0].title)+')':hlLeft>0?'(เหลือสิทธิ์ '+hlLeft+' วัน)':'(สิทธิ์เดือนนี้หมดแล้ว)'}</span></label>
   <div class="f"><label>แนบรูป / แผนผังหน้างาน</label><input type="file" id="bP" accept="image/*" multiple></div>
-  <div class="row"><button class="btn" onclick="closeSheet()">ยกเลิก</button><span class="sp"></span><button class="btn pri" onclick="savePick('${d}')">เลือกวันนี้</button></div>`);
+  <div class="row"><button class="btn" onclick="closeSheet()">ยกเลิก</button><span class="sp"></span><button class="btn pri" onclick="${adm?'adminSavePick':'savePick'}('${d}')">${adm?'👑 บันทึกให้ '+ME+'.':'เลือกวันนี้'}</button></div>`);
 }
 async function savePick(d){
   const t=document.getElementById('bT').value.trim()||'(ยังไม่ระบุงาน)';const f=document.getElementById('bF').value.trim();
   const p={date:d,title:t+(f?' '+f:''),crew:document.getElementById('bC').value,hl:document.getElementById('bH').checked,photos:await filesToData(document.getElementById('bP')),upId:document.getElementById('bU')?.value||''};
   PICK.push(p);closeSheet();vBook();
+}
+async function adminSavePick(d){
+  const t=document.getElementById('bT').value.trim()||'(ยังไม่ระบุงาน)';const f=document.getElementById('bF').value.trim();
+  const it={date:d,title:t+(f?' '+f:''),crew:document.getElementById('bC').value,hl:document.getElementById('bH').checked,photos:await filesToData(document.getElementById('bP')),upId:document.getElementById('bU')?.value||''};
+  closeSheet();try{await api('adminPick',{unit:ME,item:it});toast('บันทึกให้ '+U[ME].name+' แล้ว');await reload(true)}catch(e){toast('⚠ '+e.message,4500)}
 }
 async function confirmPick(){
   const items=PICK;

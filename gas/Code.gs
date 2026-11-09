@@ -117,6 +117,7 @@ function route_(p) {
       case 'state': return state_(u);
       case 'pick': return pick_(u, p);
       case 'yield': return yield_(u, p);
+      case 'adminPick': return adminPick_(u, p);
       case 'swapReq': return swapReq_(u, p);
       case 'swapAns': return swapAns_(u, p);
       case 'saveRound': return saveRound_(u, p);
@@ -277,6 +278,26 @@ function pick_(u, p) {
   cfg.turn.idx++; settle_(cfg);
   setCfg_('round:' + month, cfg);
   notifyTurn_(month, cfg);
+  return {ok: true};
+}
+// แอดมิน/โคแอดมิน ลงวันระดมทีมแทนหน่วยใดก็ได้ ไม่ใช้คิว ไม่เลื่อนคิว
+function adminPick_(u, p) {
+  if (!isCo_(u)) throw new Error('เฉพาะแอดมินและโคแอดมิน');
+  const unit = p.unit, it = p.item || {};
+  if (UNITS.indexOf(unit) < 0) throw new Error('ไม่พบหน่วยงาน');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(it.date || '')) throw new Error('วันที่ไม่ถูกต้อง');
+  const month = it.date.slice(0, 7);
+  const cfg = getCfg_('round:' + month, null) || {allowWeekend: false, lockTraining: true, lockMeeting: true};
+  const evs = rows_('Events');
+  const why = lockReason_(evs, cfg, it.date); if (why) throw new Error(it.date + ' ลงไม่ได้: ' + why);
+  const hl = !!it.hl && !evOn_(evs, it.date).some(e => e.type === 'L');
+  const now = new Date().toISOString(); const id = newId_();
+  const photos = (it.photos || []).map(b => savePhoto_(b, month + '_' + unit + '_' + it.date)).join(',');
+  append_('Events', {id, start: it.date, end: it.date, type: 'O', unit, title: it.title || '', crew: it.crew || '', hl, photos, src: 'admin', createdBy: u.name, createdAt: now, ofOut: ''});
+  if (it.upId) { const up = rows_('UnitPlans').find(x => x.id === it.upId && x.unit === unit); if (up) update_('UnitPlans', up._row, {outId: id, start: it.date, end: it.date, mob: true, updatedAt: now}); }
+  if (hl) append_('Events', {id: newId_(), start: it.date, end: it.date, type: 'L', unit: '', title: 'ช่วยงาน ' + unit + '.', crew: '', hl: '', photos: '', src: 'admin', createdBy: u.name, createdAt: now, ofOut: id});
+  audit_(u, 'ลงวันแทน ' + unit + ' (ไม่ใช้คิว)', it.date + ' ' + (it.title || '') + (hl ? ' +ฮอตไลน์' : ''));
+  push_(idsOfUnit_(unit), '👑 ' + u.name + ' ลงวันระดมทีมให้ ' + UNAME[unit] + '\n' + thD_(it.date) + ' · ' + (it.title || '') + (hl ? '\n⚡ พร้อมฮอตไลน์ กบ.06' : ''));
   return {ok: true};
 }
 // ยกคิวให้หน่วยถัดไปเลือกก่อน (สลับลำดับเฉพาะรอบนี้)
