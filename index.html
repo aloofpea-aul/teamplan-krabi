@@ -73,6 +73,22 @@ nav.bottom button.on .ic{transform:scale(1.1)}
 .ev.W,.ev.P{background:#f3f4f6;border-color:#9ca3af;color:#374151}
 .ev.L{background:#fff7ed;border-color:var(--hl);color:#7c2d12;font-size:11px}
 .ev .cam{float:right;font-size:10px}
+.atts{float:right;display:inline-flex;gap:2px;margin-left:2px}
+.att{display:inline-flex;align-items:center;gap:2px;font-size:10px;line-height:1.4;padding:0 4px;border-radius:999px;font-weight:700}
+.att.inv{background:#dbeafe;color:#1d4ed8}.att.ok{background:#dcfce7;color:#15803d}.att.wait{background:#fef3c7;color:#b45309}
+.pl{display:inline-block;width:6px;height:6px;border-radius:50%;background:#f59e0b;animation:pl 1.4s infinite;flex:none}
+@keyframes pl{0%{box-shadow:0 0 0 0 rgba(245,158,11,.75)}70%{box-shadow:0 0 0 6px rgba(245,158,11,0)}100%{box-shadow:0 0 0 0 rgba(245,158,11,0)}}
+.attbox{margin-top:10px;padding-top:8px;border-top:1px dashed var(--line)}
+.attf{display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid var(--line);border-radius:10px;margin-top:6px;background:#fff;font-size:14px}
+.attf a{color:inherit;text-decoration:none}.attf .fn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attf.empty{border-style:dashed;color:#b45309;background:transparent}
+.hchips{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:6px}
+.hc{display:inline-flex;align-items:center;gap:4px;font-size:12.5px;padding:2px 8px;border-radius:999px;border:1px solid var(--line)}
+.hc.ok{background:#dcfce7;color:#15803d;border-color:transparent;animation:pop .5s}.hc.wait{background:#fffbeb;color:#b45309}.hc.off{color:#9ca3af;text-decoration:line-through;background:#f3f4f6}
+.hc button{border:0;background:none;padding:0 0 0 2px;font-size:12px;cursor:pointer;color:inherit}
+.abar{height:6px;background:#eee;border-radius:3px;margin-top:6px;overflow:hidden}.abar i{display:block;height:100%;transition:width .4s}
+@media(max-width:700px){.att .tx{display:none}.atts{float:none;display:flex;margin:0 0 1px}}
+@keyframes pop{0%{transform:scale(.6)}60%{transform:scale(1.15)}100%{transform:scale(1)}}
 .chip{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11px;color:#fff;font-weight:600}
 /* booking cal */
 .d.av{background:#ecfdf5}
@@ -204,6 +220,6 @@ td.c,th.c{text-align:center}
  <div id="pendBody"></div>
  <button class="btn pri" onclick="reload().catch(e=>toast(e.message))">ตรวจสอบอีกครั้ง</button> <button class="btn" onclick="logout()">ออกจากระบบ</button></div></div>
 <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-<script src="app.js?v=16"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>

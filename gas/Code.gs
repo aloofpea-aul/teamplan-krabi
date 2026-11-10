@@ -14,6 +14,7 @@ const SHEETS = {
   Config:  ['key','value'],
   Picks:   ['month','round','unit','dates','by','at'],
   Swaps:   ['id','month','from','to','a','b','st','by','at','answeredBy','answeredAt'],
+  Files:   ['id','evId','kind','to','name','fileId','mime','size','by','byName','at'],
   Audit:   ['at','by','action','detail'],
   UnitPlans: ['id','unit','start','end','kind','title','crew','status','mob','outId','photos','note','createdBy','createdAt','updatedAt'],
 };
@@ -118,6 +119,9 @@ function route_(p) {
       case 'pick': return pick_(u, p);
       case 'yield': return yield_(u, p);
       case 'setMyUnit': return setMyUnit_(u, p);
+      case 'fileAdd': return fileAdd_(u, p);
+      case 'fileDel': return fileDel_(u, p);
+      case 'skipSet': return skipSet_(u, p);
       case 'adminPick': return adminPick_(u, p);
       case 'swapReq': return swapReq_(u, p);
       case 'swapAns': return swapAns_(u, p);
@@ -204,7 +208,7 @@ function testPush() { push_(idsAdmins_(), '🔔 ทดสอบแจ้งเ�
 
 // ================= state =================
 function state_(u) {
-  const out = {ok: true, me: {name: u.name, pic: u.pic, unit: u.unit, role: u.role, status: u.status}};
+  const out = {ok: true, me: {lineId: u.lineId, name: u.name, pic: u.pic, unit: u.unit, role: u.role, status: u.status}};
   if (u.status !== 'approved') return out;
   out.events = rows_('Events').map(e => ({id: e.id, start: e.start, end: e.end, type: e.type, unit: e.unit, title: e.title, crew: e.crew, hl: e.hl === true || e.hl === 'TRUE', photos: e.photos ? String(e.photos).split(',') : [], src: e.src, ofOut: e.ofOut}));
   out.active = getCfg_('active', '');
@@ -213,6 +217,8 @@ function state_(u) {
   out.picks = rows_('Picks').map(p => ({month: p.month, round: Number(p.round), unit: p.unit, dates: String(p.dates).split(',').filter(Boolean), by: p.by, at: p.at}));
   out.swaps = rows_('Swaps').map(s => ({id: s.id, month: s.month, from: s.from, to: s.to, a: s.a, b: s.b, st: s.st, at: s.at}));
   out.doc = getCfg_('doc', null);
+  out.files = rows_('Files').map(f => ({id: f.id, evId: f.evId, kind: f.kind, to: f.to, name: f.name, fileId: f.fileId, mime: f.mime, size: Number(f.size) || 0, by: f.by, byName: f.byName, at: f.at}));
+  out.skips = {}; rows_('Config').filter(r => r.key.startsWith('skip:')).forEach(r => out.skips[r.key.slice(5)] = JSON.parse(r.value));
   const seeAll = isPlanner_(u);
   out.unitPlans = rows_('UnitPlans').filter(x => seeAll || x.unit === u.unit).map(x => ({id: x.id, unit: x.unit, start: x.start, end: x.end, kind: x.kind, title: x.title, crew: x.crew, status: x.status, mob: x.mob === true || x.mob === 'TRUE', outId: x.outId, photos: x.photos ? String(x.photos).split(',') : [], note: x.note, by: x.createdBy}));
   out.audit = rows_('Audit').slice(-60).reverse().map(a => ({at: a.at, by: a.by, action: a.action, detail: a.detail}));
@@ -480,6 +486,48 @@ function editEvent_(u, p) {
   if (!own) audit_(u, 'แก้ไขแทน', r.start + ' ' + r.unit + ' → ' + p.title);
   return {ok: true};
 }
+// ===== ไฟล์แนบวันระดมทีม: หนังสือเชิญ (inv) ก่อนงาน · ค่าแรง (wage) หลังงาน — เจ้าของงานแนบ ทุกคนดาวน์โหลด =====
+function evOwner_(u, evId) {
+  const ev = rows_('Events').find(e => e.id === evId && e.type === 'O'); if (!ev) throw new Error('ไม่พบงานระดมทีม');
+  if (!isCo_(u) && !(u.unit === ev.unit && rank_(u) >= 1.5)) throw new Error('แนบได้เฉพาะหน่วยเจ้าของงาน (' + ev.unit + '.)');
+  return ev;
+}
+function fileAdd_(u, p) {
+  const ev = evOwner_(u, p.evId);
+  const kind = p.kind === 'wage' ? 'wage' : 'inv';
+  const to = kind === 'wage' ? (p.to === 'all' || UNITS.indexOf(p.to) >= 0 ? p.to : 'all') : '';
+  const m = String(p.data || '').match(/^data:([^;,]*)(?:;[^,]*)?;base64,(.+)$/); if (!m) throw new Error('ไฟล์ไม่ถูกต้อง');
+  const name = String(p.name || 'file').slice(0, 150);
+  const blob = Utilities.newBlob(Utilities.base64Decode(m[2]), m[1] || 'application/octet-stream', name);
+  const f = DriveApp.getFolderById(SP.getProperty('FOLDER_ID')).createFile(blob);
+  f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  const row = {id: newId_(), evId: ev.id, kind, to, name, fileId: f.getId(), mime: blob.getContentType(), size: blob.getBytes().length, by: u.lineId, byName: u.name, at: new Date().toISOString()};
+  append_('Files', row);
+  audit_(u, kind === 'inv' ? 'แนบหนังสือเชิญ' : 'แนบค่าแรง', ev.start + ' ' + ev.unit + ' · ' + name + (to ? ' → ' + to : ''));
+  if (p.notify) {
+    if (kind === 'inv') push_(idsAll_().filter(id => id !== u.lineId), '✉️ ' + UNAME[ev.unit] + ' แนบหนังสือเชิญร่วมงานระดมทีม\n' + thD_(ev.start) + ' · ' + ev.title + '\nเปิดแอป → แตะวันที่ เพื่อดาวน์โหลด');
+    else { const ids = to === 'all' ? idsAll_() : idsOfUnit_(to); push_(ids.filter(id => id !== u.lineId), '💰 ' + UNAME[ev.unit] + ' แนบไฟล์ค่าแรง' + (to === 'all' ? 'รวมทุกหน่วย' : ' ' + UNAME[to]) + '\nงาน ' + thD_(ev.start) + ' · ' + ev.title); }
+  }
+  return {ok: true, id: row.id};
+}
+function fileDel_(u, p) {
+  const r = rows_('Files').find(x => x.id === p.id); if (!r) throw new Error('ไม่พบไฟล์');
+  if (r.by !== u.lineId && !isCo_(u)) throw new Error('ลบได้เฉพาะคนแนบหรือแอดมิน');
+  try { DriveApp.getFileById(r.fileId).setTrashed(true); } catch (e) {}
+  sheet_('Files').deleteRow(r._row);
+  audit_(u, 'ลบไฟล์แนบ', r.name);
+  return {ok: true};
+}
+function skipSet_(u, p) {
+  const ev = evOwner_(u, p.evId);
+  if (UNITS.indexOf(p.unit) < 0 || p.unit === ev.unit) throw new Error('หน่วยไม่ถูกต้อง');
+  const k = 'skip:' + ev.id; let a = getCfg_(k, []);
+  a = a.filter(x => x !== p.unit); if (p.skip) a.push(p.unit);
+  setCfg_(k, a);
+  audit_(u, p.skip ? 'ตัดหน่วยที่ไม่ได้มาช่วย' : 'คืนหน่วยที่มาช่วย', ev.start + ' ' + ev.unit + ' · ' + p.unit);
+  return {ok: true};
+}
+
 // ผู้ใช้ใหม่เลือกสังกัดเองหลังล็อกอิน LINE → แอดมินแค่กำหนดสิทธิ์
 function setMyUnit_(u, p) {
   if (u.status !== 'pending') throw new Error('เปลี่ยนหน่วยงานได้เฉพาะตอนรออนุมัติ — ติดต่อแอดมิน');

@@ -196,11 +196,61 @@ function calGrid(ym,cellFn){
   const tail=(7-(first+days.length)%7)%7;for(let i=0;i<tail;i++)h+=`<div class="d out"></div>`;
   return `<div class="cal">${h}</div>`;
 }
+// ---------- ไฟล์แนบวันระดมทีม ----------
+const FL=()=>(S&&S.files)||[];
+function attNeed(e){const sk=(S.skips&&S.skips[e.id])||[];return UNITS.map(u=>u.id).filter(id=>id!==e.unit&&!sk.includes(id))}
+function attInfo(e){const f=FL().filter(x=>x.evId===e.id);const inv=f.filter(x=>x.kind==='inv'),wage=f.filter(x=>x.kind==='wage');
+  const need=attNeed(e);const all=wage.some(x=>x.to==='all');const cov=all?need.slice():need.filter(id=>wage.some(x=>x.to===id));
+  const started=e.start<=TODAY;return {inv,wage,need,cov,all,started,done:started&&cov.length>=need.length}}
+function attBadge(e){const a=attInfo(e);let h='';
+  if(a.inv.length)h+=`<span class="att inv">✉${a.inv.length>1?a.inv.length:''}</span>`;else if(!a.started)h+=`<span class="att wait"><i class="pl"></i><span class="tx">เชิญ</span></span>`;
+  if(a.started)h+=a.done?`<span class="att ok">✓฿</span>`:`<span class="att wait"><i class="pl"></i>฿<span class="tx">${a.cov.length}/${a.need.length}</span></span>`;
+  return h?`<span class="atts">${h}</span>`:''}
+const fIcon=f=>/pdf/.test(f.mime)?'📕':/sheet|excel|csv/.test(f.mime)||/\.xlsx?$/i.test(f.name)?'📗':/word|doc/.test(f.mime)?'📘':/image/.test(f.mime)?'🖼':'📄';
+const fSize=b=>b>1048576?(b/1048576).toFixed(1)+' MB':Math.max(1,Math.round(b/1024))+' KB';
+function attRow(f,d){const canDel=f.by===S.me.lineId||isCo();
+  return `<div class="attf">${fIcon(f)}<a href="https://drive.google.com/uc?export=download&id=${f.fileId}" target="_blank" rel="noopener" class="sp" style="min-width:0"><div class="fn">${esc(f.name)}</div><div class="note">${esc(f.byName)} · ${new Date(f.at).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})} · ${fSize(f.size)}</div></a>
+  ${f.kind==='wage'?`<span class="chip" style="background:${f.to==='all'?'#16a34a':(U[f.to]?.c||'#666')}">${f.to==='all'?'รวมทุกหน่วย':f.to+'.'}</span>`:''}
+  <a class="btn ghost" href="https://drive.google.com/uc?export=download&id=${f.fileId}" target="_blank" rel="noopener" title="ดาวน์โหลด">⬇</a>${canDel?`<button class="btn ghost" title="ลบ" onclick="attDel('${f.id}','${d}',this)">🗑</button>`:''}</div>`}
+function attBlock(e,d){const a=attInfo(e);const own=isCo()||(S.me.unit===e.unit&&rank()>=1.5);
+  let h=`<div class="attbox"><div class="row"><b>1 · หนังสือเชิญ / โทรสาร</b><span class="note">ก่อนวันงาน · ${esc(e.unit)}. แนบ</span><span class="sp"></span>
+   ${own?`<label class="btn">📎 แนบ<input type="file" multiple hidden onchange="attUp('${e.id}','inv',this,'${d}')"></label>`:''}</div>
+   ${a.inv.length?a.inv.map(f=>attRow(f,d)).join(''):`<div class="attf empty"><i class="pl"></i>${own?'ยังไม่ได้แนบหนังสือเชิญ — หน่วยอื่นรอดาวน์โหลด':'รอ '+esc(e.unit)+'. แนบหนังสือเชิญ'}</div>`}</div>
+  <div class="attbox"><div class="row"><b>2 · ค่าแรงหน่วยที่มาช่วย</b><span class="note">หลังเสร็จงาน · ${esc(e.unit)}. แนบ</span></div>`;
+  if(!a.started&&!isCo())h+=`<div class="attf empty" style="color:var(--mut)">เปิดให้แนบตั้งแต่วันงาน (${thDate(e.start)})</div>`;
+  else{
+    const sk=(S.skips&&S.skips[e.id])||[];
+    h+=`<div class="hchips">${UNITS.filter(u=>u.id!==e.unit).map(u=>{const off=sk.includes(u.id),ok=a.cov.includes(u.id);
+      return `<span class="hc ${off?'off':ok?'ok':'wait'}">${off?'—':ok?'✓':'<i class="pl"></i>'}${u.id}.${own&&!ok?`<button title="${off?'คืนหน่วยนี้':'ไม่ได้มาช่วย — ตัดออก'}" onclick="attSkip('${e.id}','${u.id}',${!off},'${d}')">${off?'↺':'✕'}</button>`:''}</span>`}).join('')}
+      <span class="note">ส่งแล้ว ${a.cov.length}/${a.need.length}${sk.length?' · ไม่ได้มาช่วย '+sk.length:''}</span></div>
+      <div class="abar"><i style="width:${a.need.length?a.cov.length/a.need.length*100:100}%;background:${a.done?'#16a34a':'#f59e0b'}"></i></div>`;
+    h+=a.wage.map(f=>attRow(f,d)).join('');
+    if(own&&!a.all)h+=`<div class="attf empty" style="flex-wrap:wrap;gap:6px">📎 แนบค่าแรงของ <select id="wTo_${e.id}"><option value="all">รวมทุกหน่วย (ไฟล์เดียว)</option>${a.need.filter(id=>!a.cov.includes(id)).map(id=>`<option value="${id}">${U[id].name}</option>`).join('')}</select>
+      <label class="btn pri">เลือกไฟล์<input type="file" multiple hidden onchange="attUp('${e.id}','wage',this,'${d}')"></label></div>`;
+    else if(own&&a.all)h+=`<div class="row" style="margin-top:6px"><label class="btn">📎 แนบเพิ่ม<input type="file" multiple hidden onchange="attUp('${e.id}','wage',this,'${d}','all')"></label></div>`;
+    if(a.done)h+=`<div class="note" style="color:#16a34a;margin-top:6px">✅ ค่าแรงครบทุกหน่วยแล้ว</div>`;
+  }
+  return h+`</div>`}
+function readRaw(f){return new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsDataURL(f)})}
+async function attUp(evId,kind,inp,d,forceTo){
+  const files=[...(inp.files||[])];if(!files.length)return;
+  const to=kind==='wage'?(forceTo||document.getElementById('wTo_'+evId)?.value||'all'):'';
+  const big=files.find(f=>f.size>45*1048576);if(big)return toast('⚠ ไฟล์ '+big.name+' ใหญ่เกิน 45 MB',4500);
+  closeSheet();let n=0;
+  try{for(const f of files){n++;toast(`กำลังอัปโหลด ${n}/${files.length} · ${f.name}`,60000);
+      await api('fileAdd',{evId,kind,to,name:f.name,data:await readRaw(f),notify:n===1})}
+    toast('แนบแล้ว '+files.length+' ไฟล์');await reload(true);dayClick(d)}
+  catch(e){toast('⚠ '+e.message,4500);await reload(true)}
+}
+async function attDel(id,d,btn){if(btn.dataset.ok!=='1'){btn.dataset.ok='1';btn.textContent='ยืนยันลบ?';setTimeout(()=>{btn.dataset.ok='';btn.textContent='🗑'},3000);return}
+  closeSheet();await act('fileDel',{id},'ลบไฟล์แล้ว');dayClick(d)}
+async function attSkip(evId,unit,skip,d){closeSheet();await act('skipSet',{evId,unit,skip},skip?'ตัด '+unit+'. ออก (ไม่ได้มาช่วย)':'คืน '+unit+'. แล้ว');dayClick(d)}
+
 function evHtml(e){
   if(e.type==='H')return `<div class="ev H">${esc(e.title)}</div>`;
   if(e.type==='L')return `<div class="ev L">🔧 กบ.06 → ${esc(e.title)}</div>`;
   if(e.type==='O'){const u=U[e.unit]||{c:'#666'};
-    return `<div class="ev" style="border-color:${u.c};background:${u.c}14">${e.photos.length?'<span class="cam">📷'+e.photos.length+'</span>':''}<b style="color:#d00">ดับไฟ</b> <b style="color:${u.c}">${esc(e.unit)}.</b><span class="long"> ${esc(e.title)}</span>${e.hl?' <span class="long">⚡ฮอตไลน์</span>':''}</div>`}
+    return `<div class="ev" style="border-color:${u.c};background:${u.c}14">${attBadge(e)}${e.photos.length?'<span class="cam">📷'+e.photos.length+'</span>':''}<b style="color:#d00">ดับไฟ</b> <b style="color:${u.c}">${esc(e.unit)}.</b><span class="long"> ${esc(e.title)}</span>${e.hl?' <span class="long">⚡ฮอตไลน์</span>':''}</div>`}
   const lab={T:'🎓 ',M:'🗓 ',W:'',P:'⏳ '}[e.type]||'';
   return `<div class="ev ${e.type}">${lab}${e.unit&&e.type!=='T'&&e.type!=='M'?'<b>'+esc(e.unit)+'.</b> ':''}<span class="long">${esc(e.title)}</span>${innerWidth<=700?esc(e.type==='T'?'อบรม':e.type==='M'?'ประชุม':e.type==='P'?'เตรียม':'งาน'):''}</div>`;
 }
@@ -243,6 +293,7 @@ function dayClick(d){
       <div style="margin-top:6px;font-size:15px">${e.type==='L'?'กบ.06 ไป ':''}${esc(e.title)}</div>
       ${e.crew?`<div class="note">ทีม/อุปกรณ์: ${esc(e.crew)}</div>`:''}
       ${e.hl?`<div class="note">⚡ ฮอตไลน์ กบ.06 ช่วยงาน</div>`:''}
+      ${e.type==='O'?attBlock(e,d):''}
       ${e.photos.length?`<div class="thumbs" style="margin-top:6px">${e.photos.map(p=>`<a href="https://drive.google.com/file/d/${p}/view" target="_blank"><img src="${photoUrl(p)}" loading="lazy"></a>`).join('')}</div>`:''}
       <div class="row" style="margin-top:8px">
       ${(e.type==='O'||e.type==='W')&&mine?`<label class="btn">📷 แนบรูป<input type="file" accept="image/*" multiple hidden onchange="addPhoto('${e.id}',this,'${d}')"></label>`:''}
