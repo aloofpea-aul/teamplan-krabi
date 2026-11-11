@@ -500,13 +500,15 @@ function editEvent_(u, p) {
   return {ok: true};
 }
 // ===== ไฟล์แนบวันระดมทีม: หนังสือเชิญ (inv) ก่อนงาน · ค่าแรง (wage) หลังงาน — เจ้าของงานแนบ ทุกคนดาวน์โหลด =====
+function evO_(evId) { const ev = rows_('Events').find(e => e.id === evId && e.type === 'O'); if (!ev) throw new Error('ไม่พบงานระดมทีม'); return ev; }
+// ตัดหน่วยที่ไม่ได้มาช่วย: หน่วยเจ้าของงาน (ทุกสิทธิ์) หรือแอดมิน
 function evOwner_(u, evId) {
-  const ev = rows_('Events').find(e => e.id === evId && e.type === 'O'); if (!ev) throw new Error('ไม่พบงานระดมทีม');
-  if (!isCo_(u) && !(u.unit === ev.unit && rank_(u) >= 1.5)) throw new Error('แนบได้เฉพาะหน่วยเจ้าของงาน (' + ev.unit + '.)');
+  const ev = evO_(evId);
+  if (!isCo_(u) && u.unit !== ev.unit) throw new Error('ทำได้เฉพาะหน่วยเจ้าของงาน (' + ev.unit + '.)');
   return ev;
 }
 function fileAdd_(u, p) {
-  const ev = evOwner_(u, p.evId);
+  const ev = evO_(p.evId); // แนบได้ทุกคนทุกสิทธิ์
   const kind = p.kind === 'wage' ? 'wage' : 'inv';
   const to = kind === 'wage' ? (p.to === 'all' || UNITS.indexOf(p.to) >= 0 ? p.to : 'all') : '';
   const m = String(p.data || '').match(/^data:([^;,]*)(?:;[^,]*)?;base64,(.+)$/); if (!m) throw new Error('ไฟล์ไม่ถูกต้อง');

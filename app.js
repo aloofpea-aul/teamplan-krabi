@@ -212,16 +212,16 @@ function attRow(f,d){const canDel=f.by===S.me.lineId||isCo();
   return `<div class="attf">${fIcon(f)}<a href="https://drive.google.com/uc?export=download&id=${f.fileId}" target="_blank" rel="noopener" class="sp" style="min-width:0"><div class="fn">${esc(f.name)}</div><div class="note">${esc(f.byName)} · ${new Date(f.at).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})} · ${fSize(f.size)}</div></a>
   ${f.kind==='wage'?`<span class="chip" style="background:${f.to==='all'?'#16a34a':(U[f.to]?.c||'#666')}">${f.to==='all'?'รวมทุกหน่วย':f.to+'.'}</span>`:''}
   <a class="btn ghost" href="https://drive.google.com/uc?export=download&id=${f.fileId}" target="_blank" rel="noopener" title="ดาวน์โหลด">⬇</a>${canDel?`<button class="btn ghost" title="ลบ" onclick="attDel('${f.id}','${d}',this)">🗑</button>`:''}</div>`}
-function attBlock(e,d){const a=attInfo(e);const own=isCo()||(S.me.unit===e.unit&&rank()>=1.5);
-  let h=`<div class="attbox"><div class="row"><b>1 · หนังสือเชิญ / โทรสาร</b><span class="note">ก่อนวันงาน · ${esc(e.unit)}. แนบ</span><span class="sp"></span>
+function attBlock(e,d){const a=attInfo(e);const own=true;const host=isCo()||S.me.unit===e.unit;
+  let h=`<div class="attbox"><div class="row"><b>1 · หนังสือเชิญ / โทรสาร</b><span class="note">ก่อนวันงาน</span><span class="sp"></span>
    ${own?`<label class="btn">📎 แนบ<input type="file" multiple hidden onchange="attUp('${e.id}','inv',this,'${d}')"></label>`:''}</div>
    ${a.inv.length?a.inv.map(f=>attRow(f,d)).join(''):`<div class="attf empty"><i class="pl"></i>${own?'ยังไม่ได้แนบหนังสือเชิญ — หน่วยอื่นรอดาวน์โหลด':'รอ '+esc(e.unit)+'. แนบหนังสือเชิญ'}</div>`}</div>
-  <div class="attbox"><div class="row"><b>2 · ค่าแรงหน่วยที่มาช่วย</b><span class="note">หลังเสร็จงาน · ${esc(e.unit)}. แนบ</span></div>`;
-  if(!a.started&&!isCo())h+=`<div class="attf empty" style="color:var(--mut)">เปิดให้แนบตั้งแต่วันงาน (${thDate(e.start)})</div>`;
+  <div class="attbox"><div class="row"><b>2 · ค่าแรงหน่วยที่มาช่วย</b><span class="note">หลังเสร็จงาน</span></div>`;
+  if(false)h+=`<div class="attf empty" style="color:var(--mut)">เปิดให้แนบตั้งแต่วันงาน (${thDate(e.start)})</div>`;
   else{
     const sk=(S.skips&&S.skips[e.id])||[];
     h+=`<div class="hchips">${UNITS.filter(u=>u.id!==e.unit).map(u=>{const off=sk.includes(u.id),ok=a.cov.includes(u.id);
-      return `<span class="hc ${off?'off':ok?'ok':'wait'}">${off?'—':ok?'✓':'<i class="pl"></i>'}${u.id}.${own&&!ok?`<button title="${off?'คืนหน่วยนี้':'ไม่ได้มาช่วย — ตัดออก'}" onclick="attSkip('${e.id}','${u.id}',${!off},'${d}')">${off?'↺':'✕'}</button>`:''}</span>`}).join('')}
+      return `<span class="hc ${off?'off':ok?'ok':'wait'}">${off?'—':ok?'✓':'<i class="pl"></i>'}${u.id}.${host&&!ok?`<button title="${off?'คืนหน่วยนี้':'ไม่ได้มาช่วย — ตัดออก'}" onclick="attSkip('${e.id}','${u.id}',${!off},'${d}')">${off?'↺':'✕'}</button>`:''}</span>`}).join('')}
       <span class="note">ส่งแล้ว ${a.cov.length}/${a.need.length}${sk.length?' · ไม่ได้มาช่วย '+sk.length:''}</span></div>
       <div class="abar"><i style="width:${a.need.length?a.cov.length/a.need.length*100:100}%;background:${a.done?'#16a34a':'#f59e0b'}"></i></div>`;
     h+=a.wage.map(f=>attRow(f,d)).join('');
