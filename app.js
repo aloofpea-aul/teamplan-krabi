@@ -198,6 +198,10 @@ function calGrid(ym,cellFn){
 }
 // ---------- ไฟล์แนบวันระดมทีม ----------
 const FL=()=>(S&&S.files)||[];
+// iPhone/iPad ดาวน์โหลดผ่านลิงก์ uc?export=download ไม่ได้ (ค้างหน้าขาว) → เปิดหน้าดูไฟล์ของ Drive แทน แล้วกดแชร์/บันทึกจากในนั้น
+const IOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+const fView=id=>`https://drive.google.com/file/d/${id}/view`;
+const fDown=id=>IOS?fView(id):`https://drive.google.com/uc?export=download&id=${id}`;
 function attNeed(e){const sk=(S.skips&&S.skips[e.id])||[];return UNITS.map(u=>u.id).filter(id=>id!==e.unit&&!sk.includes(id))}
 function attInfo(e){const f=FL().filter(x=>x.evId===e.id);const inv=f.filter(x=>x.kind==='inv'),wage=f.filter(x=>x.kind==='wage');
   const need=attNeed(e);const all=wage.some(x=>x.to==='all');const cov=all?need.slice():need.filter(id=>wage.some(x=>x.to===id));
@@ -209,9 +213,9 @@ function attBadge(e){const a=attInfo(e);let h='';
 const fIcon=f=>/pdf/.test(f.mime)?'📕':/sheet|excel|csv/.test(f.mime)||/\.xlsx?$/i.test(f.name)?'📗':/word|doc/.test(f.mime)?'📘':/image/.test(f.mime)?'🖼':'📄';
 const fSize=b=>b>1048576?(b/1048576).toFixed(1)+' MB':Math.max(1,Math.round(b/1024))+' KB';
 function attRow(f,d){const canDel=f.by===S.me.lineId||isCo();
-  return `<div class="attf">${fIcon(f)}<a href="https://drive.google.com/uc?export=download&id=${f.fileId}" target="_blank" rel="noopener" class="sp" style="min-width:0"><div class="fn">${esc(f.name)}</div><div class="note">${esc(f.byName)} · ${new Date(f.at).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})} · ${fSize(f.size)}</div></a>
+  return `<div class="attf">${fIcon(f)}<a href="${fView(f.fileId)}" target="_blank" rel="noopener" class="sp" style="min-width:0"><div class="fn">${esc(f.name)}</div><div class="note">${esc(f.byName)} · ${new Date(f.at).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})} · ${fSize(f.size)}</div></a>
   ${f.kind==='wage'?`<span class="chip" style="background:${f.to==='all'?'#16a34a':(U[f.to]?.c||'#666')}">${f.to==='all'?'รวมทุกหน่วย':f.to+'.'}</span>`:''}
-  <a class="btn ghost" href="https://drive.google.com/uc?export=download&id=${f.fileId}" target="_blank" rel="noopener" title="ดาวน์โหลด">⬇</a>${canDel?`<button class="btn ghost" title="ลบ" onclick="attDel('${f.id}','${d}',this)">🗑</button>`:''}</div>`}
+  <a class="btn ghost" href="${fDown(f.fileId)}" target="_blank" rel="noopener" title="ดาวน์โหลด">⬇</a>${canDel?`<button class="btn ghost" title="ลบ" onclick="attDel('${f.id}','${d}',this)">🗑</button>`:''}</div>`}
 function attBlock(e,d){const a=attInfo(e);const own=true;const host=isCo()||S.me.unit===e.unit;
   let h=`<div class="attbox"><div class="row"><b>1 · หนังสือเชิญ / โทรสาร</b><span class="note">ก่อนวันงาน</span><span class="sp"></span>
    ${own?`<label class="btn">📎 แนบ<input type="file" multiple hidden onchange="attUp('${e.id}','inv',this,'${d}')"></label>`:''}</div>
@@ -317,7 +321,7 @@ function galDraw(){let g=document.getElementById('gal');if(!g){g=document.create
   if(!GAL){g.style.display='none';return}
   const p=GAL.list[GAL.i],n=GAL.list.length;g.style.display='flex';
   g.innerHTML=`<div class="gtop"><span>${GAL.i+1} / ${n}</span><span class="sp"></span>
-   <a class="gbtn" href="https://drive.google.com/uc?export=download&id=${p}" target="_blank" rel="noopener">⬇ บันทึก</a>
+   <a class="gbtn" href="${IOS?'https://drive.google.com/thumbnail?id='+p+'&sz=w3000':fDown(p)}" target="_blank" rel="noopener">⬇ บันทึก</a>
    ${GAL.can?`<button class="gbtn" id="gdel" onclick="galDel(this)">🗑 ลบ</button>`:''}<button class="gbtn" onclick="GAL=null;galDraw()">✕</button></div>
    <div class="gimg" onclick="if(event.target===this){GAL=null;galDraw()}">${n>1?`<button class="gnav" style="left:8px" onclick="galGo(-1)">‹</button>`:''}<img src="https://drive.google.com/thumbnail?id=${p}&sz=w1600">${n>1?`<button class="gnav" style="right:8px" onclick="galGo(1)">›</button>`:''}</div>`}
 function galGo(k){GAL.i=(GAL.i+k+GAL.list.length)%GAL.list.length;galDraw()}
