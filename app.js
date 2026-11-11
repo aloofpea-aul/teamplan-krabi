@@ -221,7 +221,7 @@ function attBlock(e,d){const a=attInfo(e);const own=true;const host=isCo()||S.me
   else{
     const sk=(S.skips&&S.skips[e.id])||[];
     h+=`<div class="hchips">${UNITS.filter(u=>u.id!==e.unit).map(u=>{const off=sk.includes(u.id),ok=a.cov.includes(u.id);
-      return `<span class="hc ${off?'off':ok?'ok':'wait'}">${off?'—':ok?'✓':'<i class="pl"></i>'}${u.id}.${host&&!ok?`<button title="${off?'คืนหน่วยนี้':'ไม่ได้มาช่วย — ตัดออก'}" onclick="attSkip('${e.id}','${u.id}',${!off},'${d}')">${off?'↺':'✕'}</button>`:''}</span>`}).join('')}
+      return `<span class="hc ${off?'off':ok?'ok':'wait'}">${off?'—':ok?'✓':'<i class="pl"></i>'}${u.id}.${host?`<button title="${off?'คืนหน่วยนี้':'ไม่ได้มาช่วย — ตัดออก'}" onclick="attSkip('${e.id}','${u.id}',${!off},'${d}')">${off?'↺':'✕'}</button>`:''}</span>`}).join('')}
       <span class="note">ส่งแล้ว ${a.cov.length}/${a.need.length}${sk.length?' · ไม่ได้มาช่วย '+sk.length:''}</span></div>
       <div class="abar"><i style="width:${a.need.length?a.cov.length/a.need.length*100:100}%;background:${a.done?'#16a34a':'#f59e0b'}"></i></div>`;
     h+=a.wage.map(f=>attRow(f,d)).join('');
