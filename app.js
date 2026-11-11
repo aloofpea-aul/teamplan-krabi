@@ -294,7 +294,7 @@ function dayClick(d){
       ${e.crew?`<div class="note">ทีม/อุปกรณ์: ${esc(e.crew)}</div>`:''}
       ${e.hl?`<div class="note">⚡ ฮอตไลน์ กบ.06 ช่วยงาน</div>`:''}
       ${e.type==='O'?attBlock(e,d):''}
-      ${e.photos.length?`<div class="thumbs" style="margin-top:6px">${e.photos.map(p=>`<a href="https://drive.google.com/file/d/${p}/view" target="_blank"><img src="${photoUrl(p)}" loading="lazy"></a>`).join('')}</div>`:''}
+      ${thumbs(e.photos,'ev',e.id,mine||isCo(),d)}
       <div class="row" style="margin-top:8px">
       ${(e.type==='O'||e.type==='W')&&mine?`<label class="btn">📷 แนบรูป<input type="file" accept="image/*" multiple hidden onchange="addPhoto('${e.id}',this,'${d}')"></label>`:''}
       ${e.type==='O'&&mine?`<button class="btn" onclick="editEv('${e.id}')">✏️ แก้รายละเอียด</button>`:''}
@@ -307,6 +307,26 @@ function dayClick(d){
   if(isPlanner())h+=`<div class="row"><button class="btn" onclick="adminAdd('${d}','T')">+ วันอบรม</button><button class="btn" onclick="adminAdd('${d}','M')">+ วันประชุม</button><button class="btn" onclick="adminAdd('${d}','H')">+ วันหยุด</button><button class="btn" onclick="adminAdd('${d}','L')">+ กบ.06 ไปนอกพื้นที่</button><button class="btn" onclick="adminAdd('${d}','W')">+ งานนอกแผน</button></div>`;
   openSheet(h);
 }
+// ---------- จัดการรูป: แตะดูเต็มจอ เลื่อนดู ดาวน์โหลด ลบ ----------
+let GAL=null;
+function thumbs(list,kind,id,can,d){if(!list||!list.length)return'';GAL_REG[kind+id]={list,kind,id,can,d};
+  return `<div class="thumbs" style="margin:6px 0">${list.map((p,i)=>`<img src="${photoUrl(p)}" loading="lazy" onclick="galOpen('${kind+id}',${i})">`).join('')}${can?`<span class="note" style="align-self:center">แตะรูปเพื่อดู/ลบ</span>`:''}</div>`}
+const GAL_REG={};
+function galOpen(key,i){GAL={...GAL_REG[key],i};galDraw()}
+function galDraw(){let g=document.getElementById('gal');if(!g){g=document.createElement('div');g.id='gal';document.body.appendChild(g)}
+  if(!GAL){g.style.display='none';return}
+  const p=GAL.list[GAL.i],n=GAL.list.length;g.style.display='flex';
+  g.innerHTML=`<div class="gtop"><span>${GAL.i+1} / ${n}</span><span class="sp"></span>
+   <a class="gbtn" href="https://drive.google.com/uc?export=download&id=${p}" target="_blank" rel="noopener">⬇ บันทึก</a>
+   ${GAL.can?`<button class="gbtn" id="gdel" onclick="galDel(this)">🗑 ลบ</button>`:''}<button class="gbtn" onclick="GAL=null;galDraw()">✕</button></div>
+   <div class="gimg" onclick="if(event.target===this){GAL=null;galDraw()}">${n>1?`<button class="gnav" style="left:8px" onclick="galGo(-1)">‹</button>`:''}<img src="https://drive.google.com/thumbnail?id=${p}&sz=w1600">${n>1?`<button class="gnav" style="right:8px" onclick="galGo(1)">›</button>`:''}</div>`}
+function galGo(k){GAL.i=(GAL.i+k+GAL.list.length)%GAL.list.length;galDraw()}
+async function galDel(btn){if(btn.dataset.ok!=='1'){btn.dataset.ok='1';btn.textContent='ยืนยันลบ?';btn.style.background='#dc2626';setTimeout(()=>{if(btn.isConnected){btn.dataset.ok='';btn.textContent='🗑 ลบ';btn.style.background=''}},3500);return}
+  const {kind,id,d}=GAL,photo=GAL.list[GAL.i];GAL=null;galDraw();closeSheet();
+  await act('delPhoto',{kind,id,photo},'ลบรูปแล้ว');
+  if(kind==='ev'&&d)dayClick(d);else if(kind==='up')upEdit(id)}
+addEventListener('keydown',e=>{if(!GAL)return;if(e.key==='Escape'){GAL=null;galDraw()}if(e.key==='ArrowLeft')galGo(-1);if(e.key==='ArrowRight')galGo(1)});
+
 async function addPhoto(id,inp,d){const photos=await filesToData(inp);if(!photos.length)return;closeSheet();await act('addPhoto',{id,photos},'แนบรูปแล้ว '+photos.length+' รูป');}
 function editEv(id){const e=EV.find(x=>x.id===id);
   openSheet(`<h3>แก้รายละเอียด ${thDate(e.start)}</h3><div class="f"><label>งาน / สถานที่</label><input id="eT" value="${esc(e.title)}"></div><div class="f"><label>ทีม / อุปกรณ์</label><input id="eC" value="${esc(e.crew)}"></div>
@@ -653,7 +673,7 @@ function upEdit(id,dDefault){
   <div class="f"><label>หมายเหตุ</label><input id="uN" value="${esc(x.note)}" ${dis}></div>
   ${id?`<div class="f"><label>สถานะ</label><div class="seg">${Object.keys(UP_ST).map(k=>`<button type="button" class="${k===x.status?'on':''}" ${dis} onclick="this.parentNode.querySelectorAll('button').forEach(b=>b.classList.remove('on'));this.classList.add('on')">${k}</button>`).join('')}</div></div>`:''}
   <label class="row" style="background:#E1F5EE;color:#085041;border-radius:10px;padding:8px 10px;margin-bottom:10px;flex-wrap:nowrap"><input type="checkbox" id="uM" ${x.mob?'checked':''} ${linked||!can?'disabled':''} style="flex:none;width:18px;height:18px"><span><b>ขอเป็นงานระดมทีม</b><br><span style="font-size:12px">ต้องใช้ทีมหน่วยอื่นช่วย → ไปรอในคิวเลือกวัน</span></span></label>
-  ${x.photos.length?`<div class="thumbs" style="margin-bottom:8px">${x.photos.map(p=>`<a href="https://drive.google.com/file/d/${p}/view" target="_blank"><img src="${photoUrl(p)}" loading="lazy"></a>`).join('')}</div>`:''}
+  ${thumbs(x.photos,'up',x.id,can,'')}
   ${can?`<div class="f"><label>แนบรูป</label><input type="file" id="uP" accept="image/*" multiple></div>`:''}
   <div class="row">${id&&can&&!linked?`<button class="btn" style="color:#dc2626" onclick="upDel('${id}')">🗑 ลบ</button>`:''}<span class="sp"></span><button class="btn" onclick="closeSheet()">ปิด</button>${can?`<button class="btn pri" onclick="upSave('${id}','${x.unit}')">บันทึก</button>`:''}</div>`);
 }

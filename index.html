@@ -117,7 +117,13 @@ nav.bottom button.on .ic{transform:scale(1.1)}
 .f label{font-size:13px;color:var(--mute)}
 .f input,.f select,.f textarea{border:1px solid var(--line);border-radius:10px;padding:8px}
 .thumbs{display:flex;gap:6px;flex-wrap:wrap}
-.thumbs img{width:76px;height:76px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.thumbs img{width:76px;height:76px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer}
+#gal{position:fixed;inset:0;z-index:999;background:#000;display:none;flex-direction:column;padding-top:env(safe-area-inset-top)}
+#gal .gtop{display:flex;align-items:center;gap:8px;padding:10px 12px;color:#fff;font-size:15px}
+#gal .gbtn{background:rgba(255,255,255,.14);color:#fff;border:0;border-radius:10px;padding:8px 12px;font:inherit;font-size:14px;text-decoration:none;cursor:pointer}
+#gal .gimg{flex:1;display:flex;align-items:center;justify-content:center;position:relative;min-height:0;padding:8px}
+#gal .gimg img{max-width:100%;max-height:100%;object-fit:contain;border-radius:6px}
+#gal .gnav{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;border:0;background:rgba(255,255,255,.18);color:#fff;font-size:28px;line-height:1;cursor:pointer}
 table{border-collapse:collapse;width:100%;font-size:13.5px}
 th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
 th{background:#f7f2f8;font-weight:600}
@@ -220,6 +226,6 @@ td.c,th.c{text-align:center}
  <div id="pendBody"></div>
  <button class="btn pri" onclick="reload().catch(e=>toast(e.message))">ตรวจสอบอีกครั้ง</button> <button class="btn" onclick="logout()">ออกจากระบบ</button></div></div>
 <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-<script src="app.js?v=17"></script>
+<script src="app.js?v=18"></script>
 </body>
 </html>

@@ -130,6 +130,7 @@ function route_(p) {
       case 'delEvent': return delEvent_(u, p);
       case 'editEvent': return editEvent_(u, p);
       case 'addPhoto': return addPhoto_(u, p);
+      case 'delPhoto': return delPhoto_(u, p);
       case 'setUser': return setUser_(u, p);
       case 'docSave': return docSave_(u, p);
       case 'upSave': return upSave_(u, p);
@@ -352,6 +353,18 @@ function savePhoto_(dataUrl, name) {
   const f = DriveApp.getFolderById(SP.getProperty('FOLDER_ID')).createFile(blob);
   f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   return f.getId();
+}
+// ลบรูป: งานในปฏิทิน (Events) หรือแผนหน่วย (UnitPlans) — สิทธิ์เท่ากับคนแนบรูปได้
+function delPhoto_(u, p) {
+  const isUp = p.kind === 'up', sh = isUp ? 'UnitPlans' : 'Events';
+  const r = rows_(sh).find(e => e.id === p.id); if (!r) throw new Error('ไม่พบรายการ');
+  if (isUp ? !canUp_(u, r.unit) : (r.unit !== u.unit && !isCo_(u) && !isPlanner_(u))) throw new Error('ลบได้เฉพาะรูปของหน่วยตัวเอง');
+  const list = (r.photos ? String(r.photos).split(',') : []).filter(Boolean);
+  if (list.indexOf(p.photo) < 0) throw new Error('ไม่พบรูปนี้');
+  update_(sh, r._row, {photos: list.filter(x => x !== p.photo).join(',')});
+  try { DriveApp.getFileById(p.photo).setTrashed(true); } catch (e) {}
+  audit_(u, 'ลบรูป', (r.start || '') + ' ' + (r.unit || '') + ' ' + (r.title || ''));
+  return {ok: true};
 }
 function addPhoto_(u, p) {
   const r = rows_('Events').find(e => e.id === p.id); if (!r) throw new Error('ไม่พบรายการ');
