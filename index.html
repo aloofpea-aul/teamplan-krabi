@@ -173,7 +173,10 @@ td.c,th.c{text-align:center}
 .memo .hlref{position:absolute;right:17.5mm;bottom:10mm;font-size:12pt;text-align:right;line-height:1.2;color:#333}
 .memo table.hlt{border-collapse:collapse;width:100%;margin:1.5mm 0 0;font-size:15pt;line-height:1.15}
 .memo table.hlt th,.memo table.hlt td{border:1px solid #000;padding:1mm 2mm;text-align:center}.memo table.hlt th{font-weight:700}
-.hlr{border-top:1px solid var(--line);padding:8px 0}.hlr:first-of-type{border-top:0}
+.hlr{border-top:1px solid var(--line);padding:8px 0}
+.tg{display:inline-block;font-size:12px;padding:0 7px;border-radius:999px;font-weight:700}.tg.o{background:#fee2e2;color:#b91c1c}.tg.h{background:#fef3c7;color:#92400e}
+.rtile{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:12px 8px;border:1.5px solid var(--line);border-radius:14px;background:#fff;font:inherit;cursor:pointer}
+.rtile.on{border:2px solid var(--pri,#74045f);background:#fbf2f8}.rtile b{font-size:15px}.hlr:first-of-type{border-top:0}
 .pill{display:inline-block;font-size:12px;padding:1px 8px;border-radius:999px;white-space:nowrap}
 .pg{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .pg.land{width:297mm;height:210mm;page:land}
@@ -231,6 +234,6 @@ td.c,th.c{text-align:center}
  <div id="pendBody"></div>
  <button class="btn pri" onclick="reload().catch(e=>toast(e.message))">ตรวจสอบอีกครั้ง</button> <button class="btn" onclick="logout()">ออกจากระบบ</button></div></div>
 <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-<script src="app.js?v=23"></script>
+<script src="app.js?v=24"></script>
 </body>
 </html>

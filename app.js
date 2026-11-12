@@ -201,43 +201,50 @@ const HLR=()=>(S&&S.hlReqs)||[];
 const UFULL={ผกส:'ผกส.กฟจ.กระบี่',ผปบ:'ผปบ.กฟจ.กระบี่',อล:'ผปร.กฟส.อ่าวลึก',คท:'ผปร.กฟส.คลองท่อม',หคง:'ผปร.กฟส.เหนือคลอง',กลต:'ผปร.กฟส.เกาะลันตา',ขพ:'ผปร.กฟส.เขาพนม'};
 const UOFF={อล:'กฟส.อ่าวลึก',คท:'กฟส.คลองท่อม',หคง:'กฟส.เหนือคลอง',กลต:'กฟส.เกาะลันตา',ขพ:'กฟส.เขาพนม'};
 const HLST={wait_peer:['รอหน่วยคู่สลับยินยอม','#b45309','#fef3c7'],wait_admin:['รอแอดมินอนุมัติ','#b45309','#fef3c7'],approved:['อนุมัติแล้ว','#15803d','#dcfce7'],rejected:['ไม่อนุมัติ','#b91c1c','#fee2e2'],cancelled:['ยกเลิก','#6b7280','#f3f4f6']};
+const reqUnitOf=(e,t)=>t==='O'?(e.type==='O'&&e.start===e.end&&U[e.unit]?e.unit:''):hlUnitOf(e);
 const hlUnitOf=e=>{const m=e.type==='L'&&e.start===e.end&&/^ช่วยงาน (.+)\.$/.exec(e.title||'');return m&&U[m[1]]?m[1]:''};
-const hlDesc=r=>r.kind==='swap'?`${thDate(r.dateA)} (${r.unit}.) ⇄ ${thDate(r.dateB)} (${r.to}.)`:r.kind==='move'?`ย้าย ${thDate(r.dateA)} → ${thDate(r.newDate)}`:`ยกเลิก ${thDate(r.dateA)}`;
-function hlBtn(e,d){const x=hlUnitOf(e);if(!x||e.start<TODAY)return'';
+const hlDesc=r=>(r.type==='O'?'<span class="tg o">🔴 ดับไฟ</span> ':'<span class="tg h">⚡ กบ.06</span> ')+(r.kind==='swap'?`${thDate(r.dateA)} (${r.unit}.) ⇄ ${thDate(r.dateB)} (${r.to}.)`:r.kind==='move'?`ย้าย ${thDate(r.dateA)} → ${thDate(r.newDate)}`:`ยกเลิก ${thDate(r.dateA)}`);
+function hlBtn(e,d){const t=e.type==='O'?'O':'H';const x=reqUnitOf(e,t);if(!x||e.start<TODAY)return'';
   const pend=HLR().find(r=>(r.evA===e.id||r.evB===e.id)&&/^wait/.test(r.st));
   if(pend)return `<div class="note" style="margin-top:6px">🔁 มีคำขอเปลี่ยนค้างอยู่ · ${HLST[pend.st][0]}</div>`;
   if(!(isCo()||(S.me.unit===x&&rank()>=1.5)))return'';
-  return `<div class="row" style="margin-top:8px"><button class="btn" onclick="hlForm('${e.id}')">🔁 ขอเปลี่ยนวัน กบ.06</button></div>`}
+  return `<div class="row" style="margin-top:8px"><button class="btn" onclick="hlForm('${e.id}','swap','${t}')">🔁 ขอเปลี่ยน${t==='O'?'วันดับไฟ':'วัน กบ.06'}</button></div>`}
 // เลือกวัน กบ.06 ของหน่วยตัวเอง (แอดมิน = หน่วยที่เลือกใน "ทำในนาม") เพื่อยื่นคำขอ
-function hlPick(){const unit=isCo()?ME:S.me.unit;
-  const mine=EV.filter(e=>hlUnitOf(e)===unit&&e.start>=TODAY).sort((p,q)=>p.start<q.start?-1:1);
-  openSheet(`<div class="row"><h3 class="sp">เลือกวัน กบ.06 ของ ${U[unit].name}</h3><button class="btn ghost" onclick="closeSheet()">✕</button></div>
+let HLT='O';
+function hlPick(t){if(t)HLT=t;const unit=isCo()?ME:S.me.unit;
+  const mine=EV.filter(e=>reqUnitOf(e,HLT)===unit&&e.start>=TODAY).sort((p,q)=>p.start<q.start?-1:1);
+  const tile=(k,ic,a,b)=>`<button class="rtile ${HLT===k?'on':''}" onclick="hlPick('${k}')"><span style="font-size:22px">${ic}</span><b>${a}</b><span class="note">${b}</span></button>`;
+  openSheet(`<div class="row"><h3 class="sp">ขอเปลี่ยนแผน · ${U[unit].name}</h3><button class="btn ghost" onclick="closeSheet()">✕</button></div>
+  <div style="display:flex;gap:8px;margin:6px 0 10px">${tile('O','🔴','ดับไฟระดมทีม','ทีมก่อสร้าง · งานดับไฟ')}${tile('H','⚡','ฮอตไลน์ กบ.06','วันที่ กบ.06 มาช่วย')}</div>
+  <div class="note">แตะวันที่ต้องการเปลี่ยน</div>
   ${mine.length?mine.map(e=>{const pend=HLR().find(r=>(r.evA===e.id||r.evB===e.id)&&/^wait/.test(r.st));
-    return `<button class="btn" style="width:100%;justify-content:flex-start;margin-top:6px;text-align:left" ${pend?'disabled':''} onclick="hlForm('${e.id}')">⚡ ${thDate(e.start)} · กบ.06 ช่วยงาน ${unit}.${pend?` <span class="note">(มีคำขอค้าง)</span>`:''}</button>`}).join('')
-   :`<p class="note">${U[unit].name} ยังไม่มีวัน กบ.06 ที่จะถึง${isCo()?' — เปลี่ยนหน่วยได้ที่ช่อง “ทำในนาม” ด้านบน':''}</p>`}
-  <p class="note" style="margin-top:10px">แสดงเฉพาะวันที่ กบ.06 ช่วยงานหน่วยนี้ (ไม่รวมวันที่ไปช่วย กฟส. นอกเขต)</p>`)}
+    return `<button class="btn" style="width:100%;justify-content:flex-start;margin-top:6px;text-align:left" ${pend?'disabled':''} onclick="hlForm('${e.id}','swap','${HLT}')">${HLT==='O'?'🔴':'⚡'} ${thDate(e.start)} · ${HLT==='O'?esc(e.title):'กบ.06 ช่วยงาน '+unit+'.'}${pend?` <span class="note">(มีคำขอค้าง)</span>`:''}</button>`}).join('')
+   :`<p class="note">ยังไม่มีวัน${HLT==='O'?'ดับไฟ':' กบ.06'}ที่จะถึง${isCo()?' — เปลี่ยนหน่วยได้ที่ช่อง “ทำในนาม” ด้านบน':''}</p>`}`)}
 let HLK='swap';
-function hlForm(evId,kind){const a=EV.find(e=>e.id===evId);if(!a)return;HLK=kind||HLK;const x=hlUnitOf(a);const ym=a.start.slice(0,7);
-  const others=EV.filter(e=>{const y=hlUnitOf(e);return y&&y!==x&&e.start.startsWith(ym)&&e.start>=TODAY&&!HLR().some(r=>(r.evA===e.id||r.evB===e.id)&&/^wait/.test(r.st))}).sort((p,q)=>p.start<q.start?-1:1);
-  const free=monthDays(ym).filter(d=>d>=TODAY&&d!==a.start&&!evOn(d).some(e=>e.type==='L'||e.type==='H')&&![0,6].includes(dow(d)));
-  openSheet(`<div class="row"><h3 class="sp">ขอเปลี่ยนวัน กบ.06</h3><button class="btn ghost" onclick="closeSheet()">✕</button></div>
-  <div class="note">วันเดิม: <b>${thDate(a.start)}</b> · กบ.06 ช่วยงาน ${x}.</div>
-  <div class="seg" style="margin:10px 0">${[['swap','🔁 สลับกับหน่วยอื่น'],['move','📅 ย้ายไปวันว่าง'],['cancel','✖ ยกเลิกวันนี้']].map(([k,l])=>`<button class="${HLK===k?'on':''}" onclick="hlForm('${evId}','${k}')">${l}</button>`).join('')}</div>
-  ${HLK==='swap'?(others.length?`<label class="f"><span>สลับกับวัน กบ.06 ของหน่วย</span><select id="hlB">${others.map(e=>`<option value="${e.id}|${hlUnitOf(e)}">${thDate(e.start)} · ช่วยงาน ${hlUnitOf(e)}.</option>`).join('')}</select></label><div class="note">หน่วยคู่สลับต้องกดยินยอมในแอปก่อน แล้วจึงส่งแอดมินอนุมัติ</div>`:`<p class="note">เดือนนี้ไม่มีวัน กบ.06 ของหน่วยอื่นให้สลับ</p>`):''}
-  ${HLK==='move'?(free.length?`<label class="f"><span>ย้ายไปวันที่ (เฉพาะวันที่ กบ.06 ว่าง)</span><select id="hlN">${free.map(d=>`<option value="${d}">${thDate(d)}</option>`).join('')}</select></label>`:`<p class="note">เดือนนี้ไม่มีวันว่างของ กบ.06</p>`):''}
-  ${HLK==='cancel'?`<p class="note" style="color:#b45309">คืนวัน กบ.06 ให้ว่าง หน่วยอื่นขอใช้ได้</p>`:''}
+function hlForm(evId,kind,t){if(t)HLT=t;const a=EV.find(e=>e.id===evId);if(!a)return;HLK=kind||HLK;const T0=HLT;const x=reqUnitOf(a,T0);const ym=a.start.slice(0,7);
+  const cfgM=(S.rounds&&S.rounds[ym])||{allowWeekend:false,lockTraining:true,lockMeeting:true};const aL=EV.find(e=>e.type==='L'&&e.ofOut===a.id);
+  const others=EV.filter(e=>{const y=reqUnitOf(e,T0);return y&&y!==x&&e.start.startsWith(ym)&&e.start>=TODAY&&!HLR().some(r=>(r.evA===e.id||r.evB===e.id)&&/^wait/.test(r.st))}).sort((p,q)=>p.start<q.start?-1:1);
+  const free=monthDays(ym).filter(d=>d>=TODAY&&d!==a.start&&(T0==='O'?!lockReason(d,cfgM):(!evOn(d).some(e=>e.type==='L'||e.type==='H')&&![0,6].includes(dow(d)))));
+  const nm=T0==='O'?'วันดับไฟ':'วัน กบ.06';
+  openSheet(`<div class="row"><h3 class="sp">ขอเปลี่ยน${nm}</h3><button class="btn ghost" onclick="closeSheet()">✕</button></div>
+  <div class="note">วันเดิม: <b>${thDate(a.start)}</b> · ${T0==='O'?'ดับไฟ '+x+'. '+esc(a.title):'กบ.06 ช่วยงาน '+x+'.'}</div>
+  <div class="seg" style="margin:10px 0">${[['swap','🔁 สลับกับหน่วยอื่น'],['move','📅 ย้ายไปวันว่าง'],['cancel','✖ ยกเลิกวันนี้']].map(([k,l])=>`<button class="${HLK===k?'on':''}" onclick="hlForm('${evId}','${k}','${T0}')">${l}</button>`).join('')}</div>
+  ${HLK==='swap'?(others.length?`<label class="f"><span>สลับกับ${nm}ของหน่วย</span><select id="hlB">${others.map(e=>`<option value="${e.id}|${reqUnitOf(e,T0)}">${thDate(e.start)} · ${T0==='O'?'ดับไฟ '+reqUnitOf(e,T0)+'. '+esc(e.title):'ช่วยงาน '+reqUnitOf(e,T0)+'.'}</option>`).join('')}</select></label><div class="note">หน่วยคู่สลับต้องกดยินยอมในแอปก่อน แล้วจึงส่งแอดมินอนุมัติ</div>`:`<p class="note">เดือนนี้ไม่มี${nm}ของหน่วยอื่นให้สลับ</p>`):''}
+  ${HLK==='move'?(free.length?`<label class="f"><span>ย้ายไปวันที่ (${T0==='O'?'เฉพาะวันที่ยังไม่ล็อก/ไม่มีใครจอง':'เฉพาะวันที่ กบ.06 ว่าง'})</span><select id="hlN">${free.map(d=>`<option value="${d}">${thDate(d)}</option>`).join('')}</select></label>`:`<p class="note">เดือนนี้ไม่มีวันว่าง</p>`):''}
+  ${HLK==='cancel'?`<p class="note" style="color:#b45309">คืน${nm}ให้ว่าง หน่วยอื่นขอใช้ได้</p>`:''}
+  ${T0==='O'&&aL?`<label class="row" style="margin:8px 0;gap:8px"><input type="checkbox" id="hlW" checked style="width:18px;height:18px"> ${HLK==='cancel'?'ยกเลิก กบ.06 ที่จองคู่กับงานนี้ด้วย':'ย้าย กบ.06 ที่จองคู่กับงานนี้ไปด้วย'}</label>`:''}
   <label class="f"><span>เหตุผล (จะพิมพ์ลงในหนังสือ)</span><textarea id="hlR" rows="2" placeholder="เช่น มีงานแก้ไฟฟ้าขัดข้องเร่งด่วน F๓ บ้านบากัน"></textarea></label>
   <div class="row"><button class="btn" onclick="closeSheet()">ยกเลิก</button><span class="sp"></span><button class="btn pri" onclick="hlSubmit('${evId}','${x}')">ส่งคำขอ</button></div>`)}
 async function hlSubmit(evA,unit){const reason=document.getElementById('hlR').value.trim();if(!reason)return toast('กรุณาใส่เหตุผล');
-  const p={unit,evA,kind:HLK,reason};
+  const p={unit,evA,kind:HLK,reason,type:HLT,withHl:!!document.getElementById('hlW')?.checked};
   if(HLK==='swap'){const v=document.getElementById('hlB')?.value;if(!v)return toast('ไม่มีวันให้สลับ');const [evB,to]=v.split('|');Object.assign(p,{evB,to})}
   if(HLK==='move'){const n=document.getElementById('hlN')?.value;if(!n)return toast('ไม่มีวันว่าง');p.newDate=n}
   closeSheet();await act('hlReq',p,'ส่งคำขอแล้ว')}
 function hlCard(){const recent=r=>/^wait/.test(r.st)||(r.st==='approved'&&r.dateA>=TODAY.slice(0,7)+'-01'||(r.apAt||r.at)>=new Date(Date.now()-14*864e5).toISOString());
   const list=HLR().filter(recent).sort((p,q)=>p.at<q.at?1:-1);const nw=list.filter(r=>/^wait/.test(r.st)).length;
-  return `<div class="card"><div class="row"><b>🔁 เปลี่ยนวัน กบ.06</b>${nw?`<span class="pill" style="background:#fef3c7;color:#b45309">${nw} รอดำเนินการ</span>`:''}<span class="sp"></span><button class="btn pri" onclick="hlPick()">🔁 ขอเปลี่ยนวัน กบ.06</button></div>
+  return `<div class="card"><button class="btn pri" style="width:100%;justify-content:center;font-size:16px;padding:12px" onclick="hlPick()">🔁 ขอเปลี่ยนแผน (ดับไฟ / กบ.06)</button>${list.length?`<div class="row" style="margin-top:8px"><span class="note">คำขอเปลี่ยนแผน</span><span class="sp"></span>${nw?`<span class="pill" style="background:#fef3c7;color:#b45309">${nw} รอดำเนินการ</span>`:''}</div>`:''}
   ${list.map(r=>{const [st,fg,bg]=HLST[r.st];const iPeer=r.st==='wait_peer'&&(isCo()||(S.me.unit===r.to&&rank()>=1.5));const iAdm=r.st==='wait_admin'&&isCo();const iOwn=/^wait/.test(r.st)&&(isCo()||S.me.unit===r.unit);
-    return `<div class="hlr"><div class="row" style="gap:6px"><b style="color:${U[r.unit].c}">${r.unit}.</b><span>${hlDesc(r)}</span><span class="pill" style="background:${bg};color:${fg}">${st}</span></div>
+    return `<div class="hlr"><div class="row" style="gap:6px;flex-wrap:wrap"><b style="color:${U[r.unit].c}">${r.unit}.</b><span>${hlDesc(r)}</span><span class="pill" style="background:${bg};color:${fg}">${st}</span></div>
     <div class="note">${esc(r.reason||'')} · ${esc(r.byName)}${r.okBy?' · '+(r.to||'')+'. '+(r.st==='rejected'&&!r.apBy?'ไม่ยินยอม':'ยินยอม')+' ('+esc(r.okBy)+')':''}${r.apBy?' · '+(r.st==='approved'?'อนุมัติ':'ไม่อนุมัติ')+' ('+esc(r.apBy)+')':''}${r.note&&r.st!=='approved'?' · '+esc(r.note):''}</div>
     <div class="row" style="margin-top:6px;gap:6px">
      ${iPeer?`<button class="btn pri" onclick="act('hlPeer',{id:'${r.id}',ok:true},'ยินยอมแล้ว')">✅ ยินยอมสลับ</button><button class="btn" onclick="act('hlPeer',{id:'${r.id}',ok:false},'แจ้งไม่ยินยอมแล้ว')">ไม่ยินยอม</button>`:''}
@@ -250,7 +257,7 @@ function vHlp(){docInit();const r=HLR().find(x=>x.id===HLP);if(!r){go('cal');ret
   if(!HLDATE||HLDATE._id!==r.id){HLDATE={_id:r.id,d:(r.apAt||r.at).slice(0,10)}}
   const can=isCo()||S.me.unit===r.unit;
   document.getElementById('view').innerHTML=`<div class="card noprint">
-   <div class="row"><button class="btn" onclick="go('cal')">← กลับ</button><b>หนังสือขออนุมัติเปลี่ยน กบ.06 · ${r.no}</b><span class="sp"></span><button class="btn pri" onclick="window.print()">🖨 พิมพ์</button></div>
+   <div class="row"><button class="btn" onclick="go('cal')">← กลับ</button><b>หนังสือขออนุมัติเปลี่ยนแผน · ${r.no}</b><span class="sp"></span><button class="btn pri" onclick="window.print()">🖨 พิมพ์</button></div>
    <div class="row" style="align-items:flex-end;margin-top:8px">
     <label class="f" style="min-width:140px"><span>วันที่หนังสือ</span><input type="date" value="${HLDATE.d}" onchange="HLDATE.d=this.value;vHlp()"></label>
     <label class="f" style="flex:1;min-width:200px"><span>ชื่อผู้ลงนาม (จำไว้ให้ครั้งหน้า)</span><input id="hlSN" list="dlHL" value="${esc(r.signName||sg.name||'')}" ${can?'':'disabled'} onchange="hlSignSave('${r.id}')"></label>
@@ -264,7 +271,7 @@ function hlSignSave(id){const n=document.getElementById('hlSN'),p=document.getEl
   const r=HLR().find(x=>x.id===id);r.signName=n.value;r.signPos=p.value;
   document.getElementById('printArea').innerHTML=hlMemo(r,{name:n.value,pos:p.value});fitDoc();
   api('hlSign',{id,name:n.value,pos:p.value},true).then(()=>{const k=r.unit;S.hlSign=S.hlSign||{};const o=S.hlSign[k]||{list:[]};o.name=n.value;o.pos=p.value;o.list=[{n:n.value,pos:p.value}].concat((o.list||[]).filter(x=>x.n!==n.value)).slice(0,10);S.hlSign[k]=o}).catch(e=>toast('⚠ '+e.message))}
-function hlMemo(r,sg){const [y,m]=r.month.split('-').map(Number);const mon=`${TM[m-1]} ${thaiNum(y+543)}`;
+function hlMemo(r,sg){const O=r.type==='O';const [y,m]=r.month.split('-').map(Number);const mon=`${TM[m-1]} ${thaiNum(y+543)}`;
   const dLong=d=>{const t=parse(d);return `${TD[t.getUTCDay()]}ที่ ${thaiNum(t.getUTCDate())} ${TM[t.getUTCMonth()]} ${thaiNum(t.getUTCFullYear()+543)}`};
   const TDS=['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];const dS=d=>{const t=parse(d);return thaiNum(`${TDS[t.getUTCDay()]} ${t.getUTCDate()} ${TMS[t.getUTCMonth()]} ${t.getUTCFullYear()+543}`)};
   const A=UFULL[r.unit],B=r.to?UFULL[r.to]:'';
@@ -275,12 +282,12 @@ function hlMemo(r,sg){const [y,m]=r.month.split('-').map(Number);const mon=`${TM
   return `<div class="pg memo hlm"><img class="logo" src="pea-logo.png" alt="">
   <div class="mrow"><div class="c1"><span class="lb">จาก</span>${T(A)}</div><div class="c2"><span class="lb">ถึง</span>ผปบ.กฟจ.กระบี่</div></div>
   <div class="mrow"><div class="c1"><span class="lb">เลขที่</span><span class="dots" style="width:50mm"></span></div><div class="c2"><span class="lb">วันที่</span>${thFull(HLDATE.d)}</div></div>
-  <div class="mrow"><span class="lb">เรื่อง</span>ขออนุมัติเปลี่ยนแปลงแผนการใช้งานรถฮอตไลน์ กบ.๐๖ ประจำเดือน${mon}</div>
+  <div class="mrow"><span class="lb">เรื่อง</span>${O?'ขออนุมัติเปลี่ยนแปลงแผนการปฏิบัติงานระดมทีม':'ขออนุมัติเปลี่ยนแปลงแผนการใช้งานรถฮอตไลน์ กบ.๐๖'} ประจำเดือน${mon}</div>
   <div class="mrow" style="margin-top:3mm"><span class="lb">เรียน</span>ผจก.กฟจ.กระบี่${T(via)}</div>
-  <p class="para">ตามที่ กฟจ.กระบี่ ได้อนุมัติแผนการปฏิบัติงาน กฟจ.กระบี่และ กฟฟ.ในสังกัด ประจำเดือน${mon} ซึ่งกำหนดให้รถฮอตไลน์ กบ.๐๖ ช่วยงาน ${T(A)} ใน${dLong(r.dateA)} นั้น</p>
-  <p class="para">เนื่องจาก ${T(r.reason||'')} จึงขออนุมัติ${r.kind==='cancel'?'ยกเลิก':'เปลี่ยนแปลง'}แผนการใช้งานรถฮอตไลน์ กบ.๐๖ ดังนี้</p>
-  <table class="hlt"><tr><th style="width:10%">ลำดับ</th><th>หน่วยงาน</th><th style="width:27%">วันที่ตามแผนเดิม</th><th style="width:27%">${r.kind==='cancel'?'ขอเปลี่ยนเป็น':'เปลี่ยนเป็นวันที่'}</th></tr>
-  ${rows.map((x,i)=>`<tr><td>${thaiNum(i+1)}</td><td>${T(x[0])}</td><td>${x[1]}</td><td>${x[2]}</td></tr>`).join('')}</table>
+  <p class="para">ตามที่ กฟจ.กระบี่ ได้อนุมัติแผนการปฏิบัติงาน กฟจ.กระบี่และ กฟฟ.ในสังกัด ประจำเดือน${mon} ซึ่งกำหนดให้${O?` ${T(A)} ดำเนินการดับไฟฟ้าระดมทีมเพื่อปฏิบัติงาน ${T(r.titleA||'')}`:`รถฮอตไลน์ กบ.๐๖ ช่วยงาน ${T(A)}`} ใน${dLong(r.dateA)} นั้น</p>
+  <p class="para">เนื่องจาก ${T(r.reason||'')} จึงขออนุมัติ${r.kind==='cancel'?'ยกเลิก':'เปลี่ยนแปลง'}${O?'แผนการปฏิบัติงานระดมทีม'+(r.withHl==='Y'?' พร้อมรถฮอตไลน์ กบ.๐๖ ที่จองไว้':''):'แผนการใช้งานรถฮอตไลน์ กบ.๐๖'} ดังนี้</p>
+  <table class="hlt"><tr><th style="width:9%">ลำดับ</th><th>หน่วยงาน</th>${O?'<th>งาน</th>':''}<th style="width:${O?21:27}%">วันที่ตามแผนเดิม</th><th style="width:${O?21:27}%">${r.kind==='cancel'?'ขอเปลี่ยนเป็น':'เปลี่ยนเป็นวันที่'}</th></tr>
+  ${rows.map((x,i)=>`<tr><td>${thaiNum(i+1)}</td><td>${T(x[0])}</td>${O?`<td style="text-align:left">${T(i?r.titleB||'':r.titleA||'')}</td>`:''}<td>${x[1]}</td><td>${x[2]}</td></tr>`).join('')}</table>
   <p class="para">${r.kind==='swap'?`ทั้งนี้ ${T(B)} ได้ให้ความยินยอมในการสลับวันดังกล่าวแล้ว `:''}จึงเรียนมาเพื่อโปรดพิจารณาอนุมัติ และแจ้งส่วนที่เกี่ยวข้องดำเนินการต่อไป</p>
   <div class="sign"><div class="sp"></div>(${T(sg.name||'')||'<span class="dots" style="width:50mm"></span>'})<br>${T(sg.pos||'')}</div>
   <div class="endorse"><div>ที่ ${T(DOC.no||'')} <span class="dots"></span></div>
@@ -393,7 +400,7 @@ function dayClick(d){
       <div style="margin-top:6px;font-size:15px">${e.type==='L'?'กบ.06 ไป ':''}${esc(e.title)}</div>
       ${e.crew?`<div class="note">ทีม/อุปกรณ์: ${esc(e.crew)}</div>`:''}
       ${e.hl?`<div class="note">⚡ ฮอตไลน์ กบ.06 ช่วยงาน</div>`:''}
-      ${e.type==='O'?attBlock(e,d):''}${e.type==='L'?hlBtn(e,d):''}
+      ${e.type==='O'?attBlock(e,d)+hlBtn(e,d):''}${e.type==='L'?hlBtn(e,d):''}
       ${thumbs(e.photos,'ev',e.id,mine||isCo(),d)}
       <div class="row" style="margin-top:8px">
       ${(e.type==='O'||e.type==='W')&&mine?`<label class="btn">📷 แนบรูป<input type="file" accept="image/*" multiple hidden onchange="addPhoto('${e.id}',this,'${d}')"></label>`:''}
@@ -469,10 +476,10 @@ function vBook(){
       q+=`<div class="q ${now?'now':''} ${lg?'done':''}" ${zero&&!lg?'style="opacity:.45"':''}><div class="n">ลำดับ ${i+1}${i<FIXED?' 🔒':''} · ได้ ${QT(c,id)} วัน</div><b style="color:${u.c}">${u.name}</b><div class="st">${st}</div></div>`;
     });q+='</div>';
   }
-  q+=`<div class="note" style="margin:6px 0 4px">ขั้นสุดท้าย</div><div class="queue"><div class="q ${c.status==='swap'?'now':''}"><b>🔁 ขอแลกวันกันได้</b><div class="st">${c.status==='swap'?'เปิดแล้ว':c.status==='published'?'ปิดแล้ว':'เปิดเมื่อครบทุกรอบ'}</div></div><div class="q ${c.status==='published'?'now':''}"><b>📢 ประกาศแผน</b><div class="st">${c.status==='published'?'ประกาศแล้ว':'โดย ผกส./ผปบ.'}</div></div></div>`;
+  q+=`<div class="note" style="margin:6px 0 4px">ขั้นสุดท้าย</div><div class="queue"><div class="q ${c.status==='swap'?'now':''}"><b>🔁 ขอเปลี่ยนแผนได้</b><div class="st">${c.status==='swap'?'เปิดแล้ว':c.status==='published'?'ปิดแล้ว':'เปิดเมื่อครบทุกรอบ'}</div></div><div class="q ${c.status==='published'?'now':''}"><b>📢 ประกาศแผน</b><div class="st">${c.status==='published'?'ประกาศแล้ว':'โดย ผกส./ผปบ.'}</div></div></div>`;
   let ban;
   if(c.status==='published')ban=`<div class="banner turn">📢 ประกาศแผนเดือนนี้แล้ว</div>`;
-  else if(done)ban=`<div class="banner turn">✅ ทุกหน่วยเลือกครบแล้ว — ขอแลกวันกับหน่วยอื่นได้ (อีกฝ่ายต้องกดยอมรับ)</div>`;
+  else if(done)ban=`<div class="banner turn">✅ ทุกหน่วยเลือกครบแล้ว — ถ้าต้องการสลับ/ย้าย/ยกเลิกวัน <a href="#" onclick="go('cal');setTimeout(hlPick,50);return false">กด 🔁 ขอเปลี่ยนแผน</a> (หน่วยคู่สลับยินยอม → แอดมินอนุมัติ)</div>`;
   else if(myTurn)ban=`<div class="banner turn">ถึงคิว ${U[ME].name} แล้ว — ต้องเลือกให้ครบ ${quota} วัน (รอบที่ ${c.turn.round}) · เลือกแล้ว ${PICK.filter(p=>!p.hlOnly).length}/${quota}<br><span style="font-weight:400;font-size:13px">หน่วยถัดไปจะเลือกได้เมื่อคุณยืนยันแล้ว · ยังไม่พร้อม? ยกคิวให้หน่วยถัดไปก่อนได้</span><div style="margin-top:8px"><button class="btn" onclick="yieldTurn()">⏭ ให้หน่วยถัดไปเลือกก่อน</button></div></div>`;
   else ban=`<div class="banner wait">รอ <b style="color:${U[cu].c}">${U[cu].name}</b> เลือก (รอบที่ ${c.turn.round})${canPick?'':' · คุณมีสิทธิ์ดูอย่างเดียว'}</div>`;
   const hlLeft=(c.hlQuota[ME]||0)-hlUsed(ME,ym);
@@ -483,7 +490,7 @@ function vBook(){
   </div>
   ${admCard()}
   ${ADM&&isCo()?'':ban}
-  ${c.status==='swap'&&!ADM?swapPanel():''}
+
   <div class="card"><div class="row"><b>ปฏิทิน ${TM[m-1]} ${y+543}</b><span class="sp"></span><span class="note">🟩 เลือกได้ · ▨ ล็อก · 🟨 ที่กำลังเลือก</span></div>
   <div class="note" style="margin-top:4px">สิทธิ์ฮอตไลน์ กบ.06 ของ ${ME}. เดือนนี้: เหลือ ${Math.max(0,hlLeft)} / ${c.hlQuota[ME]||0} วัน (ขอพร้อมกับตอนเลือกวัน)</div></div>
   ${calGrid(ym,d=>{
@@ -584,7 +591,7 @@ function vSet(){
   const olock=orderLocked(saved);const odiff=saved&&saved.order.join()!==DRAFT.order.join();
   const c=DRAFT;const st=saved?.status||'ยังไม่สร้าง';const started=(S.picks||[]).some(p=>p.month===SETM);
   const [y,m]=SETM.split('-').map(Number);
-  const stLabel={setup:'กำลังตั้งค่า',open:'เปิดให้เลือกวัน',swap:'ช่วงขอแลกวัน',published:'ประกาศแล้ว'}[st]||st;
+  const stLabel={setup:'กำลังตั้งค่า',open:'เปิดให้เลือกวัน',swap:'เลือกครบแล้ว (ขอเปลี่ยนได้)',published:'ประกาศแล้ว'}[st]||st;
   document.getElementById('view').innerHTML=`
   <div class="banner adm">${S.me.role==='admin'?'👑 คุณเป็นแอดมินระบบ — เห็นและแก้ได้ทุกอย่าง รวมถึงแต่งตั้งโคแอดมิน':'ตั้งเงื่อนไขการเลือกวันของแต่ละเดือน'}</div>
   <div class="card"><div class="row"><b>เดือน</b>
@@ -594,7 +601,7 @@ function vSet(){
    <button class="btn" onclick="saveRound()">💾 บันทึก</button>
    ${(!saved||st==='setup')?`<button class="btn ok" onclick="saveRound('open')">▶ เปิดให้เลือกวัน</button>`:''}
    ${st==='swap'?`<button class="btn pri" onclick="saveRound('published')">📢 ประกาศแผน</button>`:''}
-   ${st==='published'?`<button class="btn" onclick="saveRound('swap')">↩ เปิดแลกวันอีกครั้ง</button>`:''}
+   ${st==='published'?`<button class="btn" onclick="saveRound('swap')">↩ ยกเลิกประกาศ</button>`:''}
   </div><p class="note">เปิดให้เลือกวันแล้วเดือนนี้จะเป็น “เดือนที่ใช้งาน” · เปิดได้ทีละเดือน</p></div>
   <div class="grid2">
   <div class="card"><b>ลำดับสิทธิ์และจำนวนวัน</b>
