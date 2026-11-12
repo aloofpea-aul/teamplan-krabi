@@ -208,6 +208,14 @@ function hlBtn(e,d){const x=hlUnitOf(e);if(!x||e.start<TODAY)return'';
   if(pend)return `<div class="note" style="margin-top:6px">🔁 มีคำขอเปลี่ยนค้างอยู่ · ${HLST[pend.st][0]}</div>`;
   if(!(isCo()||(S.me.unit===x&&rank()>=1.5)))return'';
   return `<div class="row" style="margin-top:8px"><button class="btn" onclick="hlForm('${e.id}')">🔁 ขอเปลี่ยนวัน กบ.06</button></div>`}
+// เลือกวัน กบ.06 ของหน่วยตัวเอง (แอดมิน = หน่วยที่เลือกใน "ทำในนาม") เพื่อยื่นคำขอ
+function hlPick(){const unit=isCo()?ME:S.me.unit;
+  const mine=EV.filter(e=>hlUnitOf(e)===unit&&e.start>=TODAY).sort((p,q)=>p.start<q.start?-1:1);
+  openSheet(`<div class="row"><h3 class="sp">เลือกวัน กบ.06 ของ ${U[unit].name}</h3><button class="btn ghost" onclick="closeSheet()">✕</button></div>
+  ${mine.length?mine.map(e=>{const pend=HLR().find(r=>(r.evA===e.id||r.evB===e.id)&&/^wait/.test(r.st));
+    return `<button class="btn" style="width:100%;justify-content:flex-start;margin-top:6px;text-align:left" ${pend?'disabled':''} onclick="hlForm('${e.id}')">⚡ ${thDate(e.start)} · กบ.06 ช่วยงาน ${unit}.${pend?` <span class="note">(มีคำขอค้าง)</span>`:''}</button>`}).join('')
+   :`<p class="note">${U[unit].name} ยังไม่มีวัน กบ.06 ที่จะถึง${isCo()?' — เปลี่ยนหน่วยได้ที่ช่อง “ทำในนาม” ด้านบน':''}</p>`}
+  <p class="note" style="margin-top:10px">แสดงเฉพาะวันที่ กบ.06 ช่วยงานหน่วยนี้ (ไม่รวมวันที่ไปช่วย กฟส. นอกเขต)</p>`)}
 let HLK='swap';
 function hlForm(evId,kind){const a=EV.find(e=>e.id===evId);if(!a)return;HLK=kind||HLK;const x=hlUnitOf(a);const ym=a.start.slice(0,7);
   const others=EV.filter(e=>{const y=hlUnitOf(e);return y&&y!==x&&e.start.startsWith(ym)&&e.start>=TODAY&&!HLR().some(r=>(r.evA===e.id||r.evB===e.id)&&/^wait/.test(r.st))}).sort((p,q)=>p.start<q.start?-1:1);
@@ -226,8 +234,8 @@ async function hlSubmit(evA,unit){const reason=document.getElementById('hlR').va
   if(HLK==='move'){const n=document.getElementById('hlN')?.value;if(!n)return toast('ไม่มีวันว่าง');p.newDate=n}
   closeSheet();await act('hlReq',p,'ส่งคำขอแล้ว')}
 function hlCard(){const recent=r=>/^wait/.test(r.st)||(r.st==='approved'&&r.dateA>=TODAY.slice(0,7)+'-01'||(r.apAt||r.at)>=new Date(Date.now()-14*864e5).toISOString());
-  const list=HLR().filter(recent).sort((p,q)=>p.at<q.at?1:-1);if(!list.length)return'';
-  return `<div class="card"><div class="row"><b>🔁 คำขอเปลี่ยนวัน กบ.06</b><span class="sp"></span><span class="note">${list.filter(r=>/^wait/.test(r.st)).length} รายการรอดำเนินการ</span></div>
+  const list=HLR().filter(recent).sort((p,q)=>p.at<q.at?1:-1);const nw=list.filter(r=>/^wait/.test(r.st)).length;
+  return `<div class="card"><div class="row"><b>🔁 เปลี่ยนวัน กบ.06</b>${nw?`<span class="pill" style="background:#fef3c7;color:#b45309">${nw} รอดำเนินการ</span>`:''}<span class="sp"></span><button class="btn pri" onclick="hlPick()">🔁 ขอเปลี่ยนวัน กบ.06</button></div>
   ${list.map(r=>{const [st,fg,bg]=HLST[r.st];const iPeer=r.st==='wait_peer'&&(isCo()||(S.me.unit===r.to&&rank()>=1.5));const iAdm=r.st==='wait_admin'&&isCo();const iOwn=/^wait/.test(r.st)&&(isCo()||S.me.unit===r.unit);
     return `<div class="hlr"><div class="row" style="gap:6px"><b style="color:${U[r.unit].c}">${r.unit}.</b><span>${hlDesc(r)}</span><span class="pill" style="background:${bg};color:${fg}">${st}</span></div>
     <div class="note">${esc(r.reason||'')} · ${esc(r.byName)}${r.okBy?' · '+(r.to||'')+'. '+(r.st==='rejected'&&!r.apBy?'ไม่ยินยอม':'ยินยอม')+' ('+esc(r.okBy)+')':''}${r.apBy?' · '+(r.st==='approved'?'อนุมัติ':'ไม่อนุมัติ')+' ('+esc(r.apBy)+')':''}${r.note&&r.st!=='approved'?' · '+esc(r.note):''}</div>
