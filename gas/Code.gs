@@ -15,6 +15,7 @@ const SHEETS = {
   Picks:   ['month','round','unit','dates','by','at'],
   Swaps:   ['id','month','from','to','a','b','st','by','at','answeredBy','answeredAt'],
   Files:   ['id','evId','kind','to','name','fileId','mime','size','by','byName','at'],
+  HLReq:   ['id','no','month','unit','kind','evA','dateA','to','evB','dateB','newDate','reason','st','by','byName','at','okBy','okAt','apBy','apAt','note','signName','signPos'],
   Audit:   ['at','by','action','detail'],
   UnitPlans: ['id','unit','start','end','kind','title','crew','status','mob','outId','photos','note','createdBy','createdAt','updatedAt'],
 };
@@ -120,6 +121,11 @@ function route_(p) {
       case 'yield': return yield_(u, p);
       case 'setMyUnit': return setMyUnit_(u, p);
       case 'fileAdd': return fileAdd_(u, p);
+      case 'hlReq': return hlReq_(u, p);
+      case 'hlPeer': return hlPeer_(u, p);
+      case 'hlDecide': return hlDecide_(u, p);
+      case 'hlCancel': return hlCancel_(u, p);
+      case 'hlSign': return hlSign_(u, p);
       case 'fileDel': return fileDel_(u, p);
       case 'skipSet': return skipSet_(u, p);
       case 'adminPick': return adminPick_(u, p);
@@ -219,6 +225,8 @@ function state_(u) {
   out.swaps = rows_('Swaps').map(s => ({id: s.id, month: s.month, from: s.from, to: s.to, a: s.a, b: s.b, st: s.st, at: s.at}));
   out.doc = getCfg_('doc', null);
   out.files = rows_('Files').map(f => ({id: f.id, evId: f.evId, kind: f.kind, to: f.to, name: f.name, fileId: f.fileId, mime: f.mime, size: Number(f.size) || 0, by: f.by, byName: f.byName, at: f.at}));
+  out.hlReqs = rows_('HLReq').filter(r => isCo_(u) || r.unit === u.unit || r.to === u.unit).map(r => { const o = {}; SHEETS.HLReq.forEach(k => o[k] = r[k]); return o; });
+  out.hlSign = {}; rows_('Config').filter(r => r.key.startsWith('hlsign:')).forEach(r => out.hlSign[r.key.slice(7)] = JSON.parse(r.value));
   out.skips = {}; rows_('Config').filter(r => r.key.startsWith('skip:')).forEach(r => out.skips[r.key.slice(5)] = JSON.parse(r.value));
   const seeAll = isPlanner_(u);
   out.unitPlans = rows_('UnitPlans').filter(x => seeAll || x.unit === u.unit).map(x => ({id: x.id, unit: x.unit, start: x.start, end: x.end, kind: x.kind, title: x.title, crew: x.crew, status: x.status, mob: x.mob === true || x.mob === 'TRUE', outId: x.outId, photos: x.photos ? String(x.photos).split(',') : [], note: x.note, by: x.createdBy}));
@@ -241,7 +249,7 @@ function lockReason_(evs, cfg, d) {
 }
 // สิทธิ์ กบ.06 ที่ใช้ไปในเดือน = ขอพร้อมวันดับไฟ + ขอช่วยงานอย่างเดียว (ที่หน่วยขอเองตอนเลือกวัน)
 function hlUsed_(evs, unit, month) {
-  return evs.filter(e => e.start.startsWith(month) && ((e.type === 'O' && e.unit === unit && (e.hl === true || e.hl === 'TRUE')) || (e.type === 'L' && !e.ofOut && e.src === 'round' && e.title === 'ช่วยงาน ' + unit + '.'))).length;
+  return evs.filter(e => e.start.startsWith(month) && ((e.type === 'O' && e.unit === unit && (e.hl === true || e.hl === 'TRUE')) || (e.type === 'L' && !e.ofOut && (e.src === 'round' || e.src === 'swap') && e.title === 'ช่วยงาน ' + unit + '.'))).length;
 }
 function allDone_(cfg) { return cfg.turn.round > cfg.rounds; }
 // จำนวนวันที่เลือกได้ต่อรอบ (0 = ข้ามหน่วยนี้) · ลำดับของรอบปัจจุบัน (ยกคิวได้เฉพาะรอบนั้น)
@@ -499,6 +507,88 @@ function editEvent_(u, p) {
   if (!own) audit_(u, 'แก้ไขแทน', r.start + ' ' + r.unit + ' → ' + p.title);
   return {ok: true};
 }
+// ===== ขอเปลี่ยนวันฮอตไลน์ กบ.06: หน่วยยื่น → หน่วยคู่สลับยินยอม (ถ้าสลับ) → แอดมิน/โคแอดมินอนุมัติ → ปฏิทินเปลี่ยน + พิมพ์หนังสือ =====
+const hlTitle_ = unit => 'ช่วยงาน ' + unit + '.';
+function hlEv_(evs, id, unit) { const e = evs.find(x => x.id === id && x.type === 'L'); if (!e || e.title !== hlTitle_(unit) || e.start !== e.end) throw new Error('ไม่พบวัน กบ.06 ของ ' + unit + '. (อาจถูกเปลี่ยนไปแล้ว)'); return e; }
+function hlReq_(u, p) {
+  const unit = actUnit_(u, p.unit);
+  if (!isCo_(u) && !(u.unit === unit && rank_(u) >= 1.5)) throw new Error('ยื่นคำขอได้เฉพาะหน่วยตัวเอง');
+  const evs = rows_('Events'); const a = hlEv_(evs, p.evA, unit);
+  const kind = ['swap', 'move', 'cancel'].indexOf(p.kind) >= 0 ? p.kind : 'swap';
+  if (rows_('HLReq').some(r => (r.evA === a.id || r.evB === a.id) && ['wait_peer', 'wait_admin'].indexOf(r.st) >= 0)) throw new Error('วันนี้มีคำขอค้างอยู่แล้ว');
+  const row = {id: newId_(), no: 'HL-' + Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyMMdd-HHmm'), month: a.start.slice(0, 7), unit, kind, evA: a.id, dateA: a.start, to: '', evB: '', dateB: '', newDate: '', reason: String(p.reason || '').slice(0, 500), st: 'wait_admin', by: u.lineId, byName: u.name, at: new Date().toISOString(), okBy: '', okAt: '', apBy: '', apAt: '', note: '', signName: '', signPos: ''};
+  if (kind === 'swap') {
+    if (UNITS.indexOf(p.to) < 0 || p.to === unit) throw new Error('เลือกหน่วยคู่สลับ');
+    const b = hlEv_(evs, p.evB, p.to); row.to = p.to; row.evB = b.id; row.dateB = b.start; row.st = 'wait_peer';
+  } else if (kind === 'move') {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(p.newDate || '')) throw new Error('เลือกวันใหม่');
+    const ev = evOn_(evs, p.newDate); if (ev.some(e => e.type === 'L')) throw new Error('วันใหม่ กบ.06 มีงานแล้ว'); if (ev.some(e => e.type === 'H')) throw new Error('วันใหม่เป็นวันหยุด');
+    row.newDate = p.newDate;
+  }
+  const sg = getCfg_('hlsign:' + unit, null); if (sg) { row.signName = sg.name || ''; row.signPos = sg.pos || ''; }
+  append_('HLReq', row);
+  audit_(u, 'ขอเปลี่ยน กบ.06', row.no + ' ' + hlDesc_(row));
+  if (row.st === 'wait_peer') push_(idsOfUnit_(row.to), '🔁 ' + UNAME[unit] + ' ขอสลับวัน กบ.06 กับ ' + UNAME[row.to] + '\n' + hlDesc_(row) + (row.reason ? '\nเหตุผล: ' + row.reason : '') + '\nเปิดแอปเพื่อกด ยินยอม / ไม่ยินยอม');
+  else push_(idsAdmins_(), '🔁 คำขอเปลี่ยน กบ.06 รออนุมัติ\n' + UNAME[unit] + ' · ' + hlDesc_(row));
+  return {ok: true, id: row.id};
+}
+function hlDesc_(r) { return r.kind === 'swap' ? thD_(r.dateA) + ' (' + r.unit + '.) ⇄ ' + thD_(r.dateB) + ' (' + r.to + '.)' : r.kind === 'move' ? 'ย้าย ' + thD_(r.dateA) + ' → ' + thD_(r.newDate) : 'ยกเลิก ' + thD_(r.dateA); }
+function hlRow_(id) { const r = rows_('HLReq').find(x => x.id === id); if (!r) throw new Error('ไม่พบคำขอ'); return r; }
+function hlPeer_(u, p) {
+  const r = hlRow_(p.id); if (r.st !== 'wait_peer') throw new Error('คำขอนี้ไม่ได้รอการยินยอม');
+  if (!isCo_(u) && !(u.unit === r.to && rank_(u) >= 1.5)) throw new Error('ยินยอมได้เฉพาะ ' + r.to + '.');
+  const ok = !!p.ok, now = new Date().toISOString();
+  update_('HLReq', r._row, ok ? {st: 'wait_admin', okBy: u.name, okAt: now} : {st: 'rejected', okBy: u.name, okAt: now, note: 'หน่วยคู่สลับไม่ยินยอม' + (p.note ? ': ' + p.note : '')});
+  audit_(u, ok ? 'ยินยอมสลับ กบ.06' : 'ไม่ยินยอมสลับ กบ.06', r.no);
+  push_(idsOfUnit_(r.unit), (ok ? '✅ ' : '❌ ') + UNAME[r.to] + (ok ? ' ยินยอม' : ' ไม่ยินยอม') + 'สลับวัน กบ.06\n' + hlDesc_(r) + (ok ? '\nรอแอดมินอนุมัติ' : ''));
+  if (ok) push_(idsAdmins_(), '🔁 คำขอเปลี่ยน กบ.06 รออนุมัติ\n' + hlDesc_(r) + ' · ' + r.to + '. ยินยอมแล้ว');
+  return {ok: true};
+}
+function hlDecide_(u, p) {
+  if (!isCo_(u)) throw new Error('อนุมัติได้เฉพาะแอดมิน/โคแอดมิน');
+  const r = hlRow_(p.id); if (r.st !== 'wait_admin') throw new Error('คำขอนี้ไม่ได้รออนุมัติ');
+  const now = new Date().toISOString();
+  if (!p.ok) {
+    update_('HLReq', r._row, {st: 'rejected', apBy: u.name, apAt: now, note: 'ไม่อนุมัติ' + (p.note ? ': ' + p.note : '')});
+    audit_(u, 'ไม่อนุมัติเปลี่ยน กบ.06', r.no);
+    push_(idsOfUnit_(r.unit).concat(r.to ? idsOfUnit_(r.to) : []), '❌ ไม่อนุมัติคำขอเปลี่ยน กบ.06\n' + hlDesc_(r) + (p.note ? '\n' + p.note : ''));
+    return {ok: true};
+  }
+  const evs = rows_('Events'); const a = hlEv_(evs, r.evA, r.unit);
+  const unhl = ev => { if (ev.ofOut) { const o = evs.find(x => x.id === ev.ofOut); if (o) update_('Events', o._row, {hl: false}); } };
+  if (r.kind === 'swap') {
+    const b = hlEv_(evs, r.evB, r.to);
+    unhl(a); unhl(b);
+    update_('Events', a._row, {title: hlTitle_(r.to), ofOut: '', src: 'swap'});
+    update_('Events', b._row, {title: hlTitle_(r.unit), ofOut: '', src: 'swap'});
+  } else if (r.kind === 'move') {
+    const ev = evOn_(evs, r.newDate); if (ev.some(e => e.type === 'L' && e.id !== a.id)) throw new Error('วันใหม่ กบ.06 มีงานแล้ว — ไม่อนุมัติได้');
+    unhl(a); update_('Events', a._row, {start: r.newDate, end: r.newDate, ofOut: '', src: 'swap'});
+  } else { unhl(a); sheet_('Events').deleteRow(a._row); }
+  update_('HLReq', r._row, {st: 'approved', apBy: u.name, apAt: now});
+  audit_(u, 'อนุมัติเปลี่ยน กบ.06', r.no + ' ' + hlDesc_(r));
+  push_(idsOfUnit_(r.unit).concat(r.to ? idsOfUnit_(r.to) : []), '✅ อนุมัติเปลี่ยน กบ.06 แล้ว\n' + hlDesc_(r) + '\nปฏิทินอัปเดตแล้ว · พิมพ์หนังสือได้ในแอป');
+  return {ok: true};
+}
+function hlCancel_(u, p) {
+  const r = hlRow_(p.id); if (['wait_peer', 'wait_admin'].indexOf(r.st) < 0) throw new Error('ยกเลิกได้เฉพาะคำขอที่ยังไม่อนุมัติ');
+  if (r.by !== u.lineId && !isCo_(u) && u.unit !== r.unit) throw new Error('ไม่มีสิทธิ์');
+  update_('HLReq', r._row, {st: 'cancelled', note: 'ยกเลิกโดย ' + u.name});
+  audit_(u, 'ยกเลิกคำขอ กบ.06', r.no);
+  return {ok: true};
+}
+// ผู้ลงนามในหนังสือ: แก้ต่อคำขอ และจำเป็นค่าเริ่มต้นของหน่วย
+function hlSign_(u, p) {
+  const r = hlRow_(p.id);
+  if (!isCo_(u) && u.unit !== r.unit) throw new Error('ไม่มีสิทธิ์');
+  const name = String(p.name || '').slice(0, 100), pos = String(p.pos || '').slice(0, 150);
+  update_('HLReq', r._row, {signName: name, signPos: pos});
+  const k = 'hlsign:' + r.unit; const old = getCfg_(k, {}) || {};
+  const list = (old.list || []).filter(x => x.n !== name); if (name) list.unshift({n: name, pos});
+  setCfg_(k, {name, pos, list: list.slice(0, 10)});
+  return {ok: true};
+}
+
 // ===== ไฟล์แนบวันระดมทีม: หนังสือเชิญ (inv) ก่อนงาน · ค่าแรง (wage) หลังงาน — เจ้าของงานแนบ ทุกคนดาวน์โหลด =====
 function evO_(evId) { const ev = rows_('Events').find(e => e.id === evId && e.type === 'O'); if (!ev) throw new Error('ไม่พบงานระดมทีม'); return ev; }
 // ตัดหน่วยที่ไม่ได้มาช่วย: หน่วยเจ้าของงาน (ทุกสิทธิ์) หรือแอดมิน
