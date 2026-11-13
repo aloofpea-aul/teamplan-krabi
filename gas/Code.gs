@@ -93,6 +93,7 @@ function doPost(e) {
   let out;
   try {
     const p = JSON.parse(e.postData.contents);
+    if (p.destination && Array.isArray(p.events)) { lineHook_(p); return ContentService.createTextOutput('OK'); }
     out = route_(p);
   } catch (err) { out = {ok: false, error: String(err.message || err)}; }
   return json_(out);
@@ -645,16 +646,21 @@ function fileAdd_(u, p) {
   const m = String(p.data || '').match(/^data:([^;,]*)(?:;[^,]*)?;base64,(.+)$/); if (!m) throw new Error('ไฟล์ไม่ถูกต้อง');
   const name = String(p.name || 'file').slice(0, 150);
   const blob = Utilities.newBlob(Utilities.base64Decode(m[2]), m[1] || 'application/octet-stream', name);
+  const row = fileStore_(u, ev, kind, to, blob, p.notify);
+  return {ok: true, id: row.id};
+}
+function fileStore_(u, ev, kind, to, blob, notify) {
+  const name = blob.getName();
   const f = DriveApp.getFolderById(SP.getProperty('FOLDER_ID')).createFile(blob);
   f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   const row = {id: newId_(), evId: ev.id, kind, to, name, fileId: f.getId(), mime: blob.getContentType(), size: blob.getBytes().length, by: u.lineId, byName: u.name, at: new Date().toISOString()};
   append_('Files', row);
   audit_(u, kind === 'inv' ? 'แนบหนังสือเชิญ' : 'แนบค่าแรง', ev.start + ' ' + ev.unit + ' · ' + name + (to ? ' → ' + to : ''));
-  if (p.notify) {
+  if (notify) {
     if (kind === 'inv') push_(idsAll_().filter(id => id !== u.lineId), '✉️ ' + UNAME[ev.unit] + ' แนบหนังสือเชิญร่วมงานระดมทีม\n' + thD_(ev.start) + ' · ' + ev.title + '\nเปิดแอป → แตะวันที่ เพื่อดาวน์โหลด');
     else { const ids = to === 'all' ? idsAll_() : idsOfUnit_(to); push_(ids.filter(id => id !== u.lineId), '💰 ' + UNAME[ev.unit] + ' แนบไฟล์ค่าแรง' + (to === 'all' ? 'รวมทุกหน่วย' : ' ' + UNAME[to]) + '\nงาน ' + thD_(ev.start) + ' · ' + ev.title); }
   }
-  return {ok: true, id: row.id};
+  return row;
 }
 function fileDel_(u, p) {
   const r = rows_('Files').find(x => x.id === p.id); if (!r) throw new Error('ไม่พบไฟล์');
@@ -699,3 +705,158 @@ function setUser_(u, p) {
   audit_(u, 'ตั้งสิทธิ์ผู้ใช้', t.name + ' → ' + p.unit + ' / ' + p.role + ' / ' + p.status);
   return {ok: true};
 }
+
+
+// ================= LINE OA: ส่งไฟล์/รูปในแชท 1:1 → บอทถามวัน/ประเภท/หน่วย → เก็บเข้าระบบ =================
+// หมายเหตุ: Apps Script อ่าน header X-Line-Signature ไม่ได้ จึงตรวจ destination (userId ของบอท) + ทำงานเฉพาะผู้ใช้ที่อนุมัติแล้วเท่านั้น
+function lineHook_(p) {
+  const bot = SP.getProperty('BOT_ID');
+  if (bot && p.destination !== bot) return;
+  if (!bot && p.destination) SP.setProperty('BOT_ID', p.destination);
+  p.events.forEach(ev => { try { botEvent_(ev); } catch (err) { Logger.log('bot ' + err); if (ev.replyToken) botReply_(ev.replyToken, [{type: 'text', text: '⚠ ' + (err.message || err)}]); } });
+}
+function botApi_(path, body) {
+  return UrlFetchApp.fetch('https://api.line.me/v2/bot/' + path, {method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: {Authorization: 'Bearer ' + SP.getProperty('LINE_TOKEN')}, payload: JSON.stringify(body)});
+}
+function botReply_(token, messages) { botApi_('message/reply', {replyToken: token, messages: messages.slice(0, 5)}); }
+const BOTC_ = () => CacheService.getScriptCache();
+function botGet_(uid) { const v = BOTC_().get('bot:' + uid); return v ? JSON.parse(v) : null; }
+function botSet_(uid, st) { if (st) BOTC_().put('bot:' + uid, JSON.stringify(st), 3600); else BOTC_().remove('bot:' + uid); }
+const qrBtn_ = (label, data) => ({type: 'action', action: {type: 'postback', label: label.slice(0, 20), data, displayText: label}});
+function botUser_(uid) { return rows_('Users').find(x => x.lineId === uid && x.status === 'approved'); }
+function botEvent_(ev) {
+  if (!ev.source || ev.source.type !== 'user') return; // ทำงานเฉพาะแชท 1:1
+  const uid = ev.source.userId;
+  const u = botUser_(uid);
+  if (!u) { if (ev.replyToken) botReply_(ev.replyToken, [{type: 'text', text: 'ยังไม่ได้ลงทะเบียนใช้งานแผนระดมทีม\nเปิดลิงก์นี้เพื่อล็อกอินด้วย LINE แล้วรอแอดมินอนุมัติ\n' + APP_URL}]); return; }
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    if (ev.type === 'message' && ['image', 'file', 'video'].indexOf(ev.message.type) >= 0) return botFile_(ev, u);
+    if (ev.type === 'postback') return botPost_(ev, u, ev.postback.data);
+    if (ev.type === 'message' && ev.message.type === 'text') {
+      const st = botGet_(uid);
+      botReply_(ev.replyToken, [{type: 'text', text: st && st.files.length ? 'มีไฟล์รอเก็บ ' + st.files.length + ' ไฟล์ — แตะปุ่มด้านล่างเพื่อเลือกวันครับ' : '📎 ส่งรูปสแกน / PDF / Excel เข้ามาในแชทนี้ได้เลย\nบอทจะถามว่าเป็นงานวันไหน แล้วเก็บเข้าระบบให้\n(หนังสือเชิญ · ค่าแรง · รูปหน้างาน)\n\nเปิดแอป: ' + APP_URL, quickReply: st && st.files.length ? botDayQR_(u) : undefined}]);
+    }
+  } finally { lock.releaseLock(); }
+}
+function botFile_(ev, u) {
+  const uid = u.lineId; let st = botGet_(uid);
+  const fresh = !st || st.step === 'done';
+  if (fresh) st = {files: [], step: 'day'};
+  st.files.push({id: ev.message.id, t: ev.message.type, name: ev.message.fileName || ''});
+  botSet_(uid, st);
+  if (!fresh) return; // รูปถัด ๆ ไปในชุดเดียวกัน — เก็บเงียบ ๆ
+  const qr = botDayQR_(u);
+  if (!qr) { botSet_(uid, null); return botReply_(ev.replyToken, [{type: 'text', text: 'ไม่พบวันระดมทีมของ ' + u.unit + '. ในช่วงนี้ — แนบผ่านแอปได้ที่ ' + APP_URL}]); }
+  botReply_(ev.replyToken, [{type: 'text', text: '📎 ได้รับไฟล์แล้ว (ส่งเพิ่มต่อได้)\nเป็นเอกสารของงานวันไหนครับ? — งานของ ' + UNAME[u.unit], quickReply: qr}]);
+}
+function botDayQR_(u) {
+  const today = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
+  const near = d => Math.abs(new Date(d) - new Date(today));
+  const co = isCo_(u);
+  let evs = rows_('Events').filter(e => e.type === 'O' && (co || e.unit === u.unit));
+  evs = evs.filter(e => near(e.start) <= 45 * 864e5).sort((a, b) => near(a.start) - near(b.start)).slice(0, co ? 11 : 11);
+  if (!evs.length) return null;
+  evs.sort((a, b) => a.start < b.start ? -1 : 1);
+  return {items: evs.map(e => qrBtn_(thS_(e.start) + ' ' + (co ? e.unit + '. ' : '') + e.title, 'ev=' + e.id)).concat([qrBtn_('✖ ไม่เก็บ', 'x=1')])};
+}
+function thS_(d) { const t = new Date(d + 'T00:00:00+07:00'); return t.getDate() + ' ' + ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'][t.getMonth()]; }
+function botPost_(ev, u, data) {
+  const uid = u.lineId; const q = {}; String(data).split('&').forEach(kv => { const [k, v] = kv.split('='); q[k] = decodeURIComponent(v || ''); });
+  if (q.undo) return botUndo_(ev, u);
+  const st = botGet_(uid);
+  if (q.x) { botSet_(uid, null); return botReply_(ev.replyToken, [{type: 'text', text: 'ยกเลิกแล้วครับ ไฟล์ไม่ได้ถูกเก็บ'}]); }
+  if (!st || !st.files.length) return botReply_(ev.replyToken, [{type: 'text', text: 'หมดเวลาแล้ว — ส่งไฟล์ใหม่อีกครั้งครับ'}]);
+  if (q.ev) {
+    const e = rows_('Events').find(x => x.id === q.ev && x.type === 'O'); if (!e) throw new Error('ไม่พบงานนี้');
+    st.ev = e.id; st.step = 'kind'; botSet_(uid, st);
+    return botReply_(ev.replyToken, [{type: 'text', text: thS_(e.start) + ' · ดับไฟ ' + e.unit + '. ' + e.title + '\nเป็นเอกสารอะไรครับ?', quickReply: {items: [
+      qrBtn_('✉️ หนังสือเชิญ', 'k=inv'), qrBtn_('💰 ค่าแรง', 'k=wage'), qrBtn_('📷 รูปหน้างาน', 'k=photo'), qrBtn_('✖ ไม่เก็บ', 'x=1')]}}]);
+  }
+  if (q.k) {
+    st.kind = q.k; botSet_(uid, st);
+    if (q.k !== 'wage') return botSave_(ev, u, st, '');
+    const e = rows_('Events').find(x => x.id === st.ev);
+    const sk = getCfg_('skip:' + e.id, []);
+    const need = UNITS.filter(x => x !== e.unit && sk.indexOf(x) < 0);
+    const files = rows_('Files').filter(f => f.evId === e.id && f.kind === 'wage');
+    const all = files.some(f => f.to === 'all');
+    const miss = all ? [] : need.filter(x => !files.some(f => f.to === x));
+    return botReply_(ev.replyToken, [{type: 'text', text: 'ค่าแรงของหน่วยไหนครับ?' + (miss.length ? '\nยังขาด: ' + miss.map(x => x + '.').join(' · ') : '\n(ครบทุกหน่วยแล้ว — แนบเพิ่มได้)'),
+      quickReply: {items: [qrBtn_('รวมทุกหน่วย', 'to=all')].concat((miss.length ? miss : need).slice(0, 10).map(x => qrBtn_(x + '.', 'to=' + x)), [qrBtn_('✖ ไม่เก็บ', 'x=1')])}}]);
+  }
+  if (q.to) return botSave_(ev, u, st, q.to);
+}
+function botContent_(id) {
+  const r = UrlFetchApp.fetch('https://api-data.line.me/v2/bot/message/' + id + '/content', {headers: {Authorization: 'Bearer ' + SP.getProperty('LINE_TOKEN')}, muteHttpExceptions: true});
+  if (r.getResponseCode() !== 200) throw new Error('ดึงไฟล์จาก LINE ไม่ได้ (หมดอายุ) — ส่งใหม่อีกครั้ง');
+  return r.getBlob();
+}
+// รวมรูปหลายรูปเป็น PDF เดียว (ผ่าน Google Doc ชั่วคราว)
+function imagesToPdf_(blobs, name) {
+  const doc = DocumentApp.create('tmp_' + name); const body = doc.getBody();
+  body.setMarginTop(20).setMarginBottom(20).setMarginLeft(20).setMarginRight(20);
+  const W = 555, H = 800;
+  blobs.forEach((b, i) => {
+    const img = body.appendImage(b); const w = img.getWidth(), h = img.getHeight(); const k = Math.min(W / w, H / h, 1);
+    img.setWidth(Math.round(w * k)).setHeight(Math.round(h * k));
+    if (i < blobs.length - 1) body.appendPageBreak();
+  });
+  const first = body.getChild(0); if (first.getType() === DocumentApp.ElementType.PARAGRAPH && !first.asParagraph().getText() && body.getNumChildren() > 1 && first.asParagraph().getNumChildren() === 0) first.removeFromParent();
+  doc.saveAndClose();
+  const f = DriveApp.getFileById(doc.getId()); const pdf = f.getAs('application/pdf').setName(name + '.pdf'); f.setTrashed(true);
+  return pdf;
+}
+function botSave_(ev, u, st, to) {
+  const e = rows_('Events').find(x => x.id === st.ev); if (!e) throw new Error('ไม่พบงานนี้');
+  const blobs = st.files.map(f => { const b = botContent_(f.id); if (f.name) b.setName(f.name); return {b, t: f.t}; });
+  const tag = e.start + '_' + e.unit + (to ? '_' + to : '');
+  const made = {files: [], photos: [], ev: e.id};
+  let summary;
+  if (st.kind === 'photo') {
+    const ids = blobs.filter(x => x.t === 'image').map((x, i) => { x.b.setName(tag + '_' + (i + 1) + '.jpg'); const f = DriveApp.getFolderById(SP.getProperty('FOLDER_ID')).createFile(x.b); f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); return f.getId(); });
+    const all = (e.photos ? String(e.photos).split(',') : []).concat(ids).filter(Boolean);
+    update_('Events', e._row, {photos: all.join(',')}); made.photos = ids;
+    audit_(u, 'แนบรูปผ่าน LINE', e.start + ' ' + e.unit + ' · ' + ids.length + ' รูป');
+    summary = '📷 รูปหน้างาน ' + ids.length + ' รูป';
+  } else {
+    const kind = st.kind === 'wage' ? 'wage' : 'inv';
+    const label = kind === 'wage' ? 'ค่าแรง' + (to === 'all' ? 'รวมทุกหน่วย' : '_' + to) : 'หนังสือเชิญ';
+    const imgs = blobs.filter(x => x.t === 'image').map(x => x.b), others = blobs.filter(x => x.t !== 'image').map(x => x.b);
+    const out = [];
+    if (imgs.length) out.push(imagesToPdf_(imgs, label + '_' + e.unit + '_' + e.start));
+    others.forEach(b => { if (!b.getName()) b.setName(label + '_' + e.start); out.push(b); });
+    out.forEach((b, i) => made.files.push(fileStore_(u, e, kind, to, b, i === 0).id));
+    summary = (kind === 'wage' ? '💰 ' : '✉️ ') + label.replace('_', ' ') + ' · ' + out.length + ' ไฟล์' + (imgs.length ? ' (รวม ' + imgs.length + ' รูปเป็น PDF)' : '');
+  }
+  botSet_(u.lineId, null); BOTC_().put('botlast:' + u.lineId, JSON.stringify(made), 3600);
+  let tail = '';
+  if (st.kind === 'wage') {
+    const sk = getCfg_('skip:' + e.id, []); const need = UNITS.filter(x => x !== e.unit && sk.indexOf(x) < 0);
+    const fs = rows_('Files').filter(f => f.evId === e.id && f.kind === 'wage'); const all = fs.some(f => f.to === 'all');
+    const miss = all ? [] : need.filter(x => !fs.some(f => f.to === x));
+    tail = miss.length ? 'ยังขาดค่าแรง: ' + miss.map(x => x + '.').join(' · ') : 'ค่าแรงครบทุกหน่วยแล้ว ✅';
+  }
+  botReply_(ev.replyToken, [botCard_(e, summary, tail)]);
+}
+function botCard_(e, summary, tail) {
+  return {type: 'flex', altText: '✅ แนบเข้าระบบแล้ว', contents: {type: 'bubble', size: 'kilo',
+    header: {type: 'box', layout: 'vertical', backgroundColor: '#16a34a', paddingAll: '12px', contents: [{type: 'text', text: '✅ แนบเข้าระบบแล้ว', color: '#ffffff', weight: 'bold'}]},
+    body: {type: 'box', layout: 'vertical', spacing: 'sm', contents: [
+      {type: 'text', text: thS_(e.start) + ' · ดับไฟ ' + e.unit + '. ' + e.title, wrap: true, weight: 'bold', size: 'sm'},
+      {type: 'text', text: summary, wrap: true, size: 'sm'}].concat(tail ? [{type: 'text', text: tail, wrap: true, size: 'xs', color: '#b45309'}] : [])},
+    footer: {type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+      {type: 'button', style: 'link', height: 'sm', action: {type: 'uri', label: 'เปิดดูในแอป', uri: APP_URL}},
+      {type: 'button', style: 'link', height: 'sm', color: '#b91c1c', action: {type: 'postback', label: 'ยกเลิกล่าสุด', data: 'undo=1', displayText: 'ยกเลิกล่าสุด'}}]}}};
+}
+function botUndo_(ev, u) {
+  const v = BOTC_().get('botlast:' + u.lineId); if (!v) return botReply_(ev.replyToken, [{type: 'text', text: 'ไม่มีรายการล่าสุดให้ยกเลิก (เกิน 1 ชม. แล้ว — ลบได้ในแอป)'}]);
+  const m = JSON.parse(v);
+  m.files.forEach(id => { const r = rows_('Files').find(x => x.id === id); if (r) { try { DriveApp.getFileById(r.fileId).setTrashed(true); } catch (e) {} sheet_('Files').deleteRow(r._row); } });
+  if (m.photos.length) { const e = rows_('Events').find(x => x.id === m.ev); if (e) update_('Events', e._row, {photos: String(e.photos || '').split(',').filter(x => x && m.photos.indexOf(x) < 0).join(',')}); m.photos.forEach(id => { try { DriveApp.getFileById(id).setTrashed(true); } catch (e) {} }); }
+  BOTC_().remove('botlast:' + u.lineId); audit_(u, 'ยกเลิกไฟล์ที่ส่งผ่าน LINE', m.files.length + ' ไฟล์ ' + m.photos.length + ' รูป');
+  botReply_(ev.replyToken, [{type: 'text', text: 'ลบไฟล์ที่แนบล่าสุดออกแล้วครับ'}]);
+}
+// รันครั้งเดียวในตัวแก้ไข เพื่อขอสิทธิ์ Google Docs (ใช้รวมรูปเป็น PDF)
+function authDocs() { const d = DocumentApp.create('tmp_auth'); DriveApp.getFileById(d.getId()).setTrashed(true); return 'ok'; }
