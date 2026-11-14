@@ -57,8 +57,8 @@ async function api(action,data={},quiet){
     return j;
   }finally{if(!quiet)busy(false)}
 }
-async function reload(quiet){
-  const j=await api('state',{},quiet);S=j;EV=j.events||[];
+async function reload(quiet,recheck){
+  const j=await api('state',recheck?{recheck:1}:{},quiet);S=j;EV=j.events||[];
   try{localStorage.setItem('tp_cache',JSON.stringify(j))}catch(e){}
   if(!ME||!isCo())ME=S.me.unit;
   boot();
@@ -162,7 +162,7 @@ function renderNav(){
   document.getElementById('nav').innerHTML=tabs.map(([k,i,t])=>`<button class="${TAB===k?'on':''}" onclick="go('${k}')"><span class="ic">${i}</span>${t}</button>`).join('');
 }
 function go(t){TAB=t;render();document.querySelector('main').scrollTop=0}
-function render(){if(!S||S.me.status!=='approved')return;renderNav();({cal:vCal,up:vUp,book:vBook,rpt:vRpt,set:vSet,ana:vAna,hlp:vHlp})[TAB]()}
+function render(){if(!S||S.me.status!=='approved')return;renderNav();oaBar();({cal:vCal,up:vUp,book:vBook,rpt:vRpt,set:vSet,ana:vAna,hlp:vHlp})[TAB]()}
 
 // ---------- helpers ----------
 function evOn(date){return EV.filter(e=>date>=e.start&&date<=e.end)}
@@ -196,6 +196,17 @@ function calGrid(ym,cellFn){
   const tail=(7-(first+days.length)%7)%7;for(let i=0;i<tail;i++)h+=`<div class="d out"></div>`;
   return `<div class="cal">${h}</div>`;
 }
+// ---------- เตือนให้เพิ่ม OA เป็นเพื่อน ----------
+const OA_ID='@692xwyix',OA_ADD='https://line.me/R/ti/p/'+encodeURIComponent(OA_ID);
+let OA_TAPPED=false;
+function oaBar(){const b=document.getElementById('oaBar');if(!b)return;
+  if(S.me.friend!=='N'){b.innerHTML='';return}
+  b.innerHTML=`<div class="oabar"><div class="oat">⚠️ คุณยังไม่ได้เพิ่ม OA “ระดมทีม กฟจ.กระบี่” เป็นเพื่อน</div>
+   <div class="oas">จะ<b>ไม่ได้รับ LINE แจ้งเตือน</b> ถึงคิวเลือกวัน · หนังสือเชิญ/ค่าแรง · ผลอนุมัติ และ<b>ส่งไฟล์ผ่านแชท LINE ไม่ได้</b></div>
+   <div class="row" style="gap:8px;margin-top:8px"><a class="btn oaadd" href="${OA_ADD}" target="_blank" rel="noopener" onclick="OA_TAPPED=true;setTimeout(oaBar,300)">➕ เพิ่มเพื่อน OA ตอนนี้</a>
+   ${OA_TAPPED?`<button class="btn" onclick="oaRecheck()">✅ เพิ่มแล้ว — ตรวจอีกครั้ง</button>`:''}</div></div>`}
+async function oaRecheck(){await reload(false,true);toast(S.me.friend==='Y'?'✅ เพิ่ม OA แล้ว ขอบคุณครับ':'ยังไม่พบ — กดเพิ่มเพื่อนแล้วลองใหม่',3500)}
+
 // ---------- ขอเปลี่ยนวันฮอตไลน์ กบ.06 ----------
 const HLR=()=>(S&&S.hlReqs)||[];
 const UFULL={ผกส:'ผกส.กฟจ.กระบี่',ผปบ:'ผปบ.กฟจ.กระบี่',อล:'ผปร.กฟส.อ่าวลึก',คท:'ผปร.กฟส.คลองท่อม',หคง:'ผปร.กฟส.เหนือคลอง',กลต:'ผปร.กฟส.เกาะลันตา',ขพ:'ผปร.กฟส.เขาพนม'};
@@ -636,9 +647,13 @@ function usersCard(){
   const co=isCo();const adm=S.me.role==='admin';
   const users=[...S.users].sort((a,b)=>(a.status==='pending'?-1:0)-(b.status==='pending'?-1:0));
   return `<div class="card" style="overflow:auto"><div class="row"><b>สิทธิ์ผู้ใช้ (ล็อกอินด้วย LINE)</b><span class="sp"></span><span class="note">คนใหม่เปิดลิงก์ → ล็อกอิน LINE → ขึ้น “รออนุมัติ” ที่นี่</span></div>
-  <table style="margin-top:6px"><tr><th>ชื่อ LINE</th><th>หน่วยงาน</th><th>สิทธิ์</th><th>สถานะ</th><th></th></tr>
+  ${(()=>{const ap=S.users.filter(x=>x.status==='approved');const no=ap.filter(x=>x.friend==='N');const unk=ap.filter(x=>!x.friend);
+   return `<div class="oasum ${no.length?'bad':''}"><b>${no.length?`⚠️ ยังไม่เพิ่ม OA ${no.length} คน`:'✅ ทุกคนเพิ่ม OA แล้ว'}</b>${no.length?`<span> — ${no.map(x=>esc(x.name)+(x.unit?' ('+x.unit+'.)':'')).join(', ')} · คนกลุ่มนี้จะไม่ได้รับแจ้งเตือน LINE</span>`:''}${unk.length?`<span class="note"> · ยังไม่ได้ตรวจ ${unk.length} คน</span>`:''}
+   ${co?`<button class="btn" style="margin-left:auto" onclick="act('friendScan',{},'ตรวจสถานะ OA ทุกคนแล้ว')">🔄 ตรวจสถานะ OA ทุกคน</button>`:''}</div>`})()}
+  <table style="margin-top:6px"><tr><th>ชื่อ LINE</th><th>OA</th><th>หน่วยงาน</th><th>สิทธิ์</th><th>สถานะ</th><th></th></tr>
   ${users.map(x=>{const lock=!co||(x.role==='admin'&&!adm);const k=x.lineId;
    return `<tr><td>${x.pic?`<img src="${esc(x.pic)}" style="width:26px;height:26px;border-radius:50%;vertical-align:middle;margin-right:6px">`:''}${esc(x.name)}</td>
+   <td>${x.friend==='Y'?'<span class="oaok">✅ เพิ่มแล้ว</span>':x.friend==='N'?'<span class="oano">❌ ยังไม่เพิ่ม</span>':'<span class="note">—</span>'}</td>
    <td><select id="u_${k}" ${lock?'disabled':''}><option value="">— เลือก —</option>${UNITS.map(u=>`<option value="${u.id}" ${x.unit===u.id?'selected':''}>${u.name}</option>`).join('')}</select></td>
    <td><select id="r_${k}" ${lock?'disabled':''}>${['','admin','coadmin','planner','picker','lead','viewer'].map(r=>`<option value="${r}" ${x.role===r?'selected':''} ${(r==='admin'||r==='coadmin')&&!adm?'disabled':''}>${ROLES[r]||'— เลือก —'}</option>`).join('')}</select></td>
    <td><select id="s_${k}" ${lock?'disabled':''}>${[['pending','รออนุมัติ'],['approved','อนุมัติ'],['blocked','ระงับ']].map(([v,t])=>`<option value="${v}" ${x.status===v?'selected':''}>${t}</option>`).join('')}</select></td>

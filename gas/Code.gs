@@ -9,7 +9,7 @@ const PLANNER_UNITS = ['ผกส','ผปบ'];
 const ROLE_RANK = {viewer:1, lead:1.5, picker:2, planner:3, coadmin:4, admin:5};
 const SHEETS = {
   Events:  ['id','start','end','type','unit','title','crew','hl','photos','src','createdBy','createdAt','ofOut'],
-  Users:   ['lineId','name','pic','unit','role','status','createdAt','lastLogin'],
+  Users:   ['lineId','name','pic','unit','role','status','createdAt','lastLogin','friend','friendAt'],
   Sessions:['token','lineId','expires'],
   Config:  ['key','value'],
   Picks:   ['month','round','unit','dates','by','at'],
@@ -123,10 +123,11 @@ function route_(p) {
   if (write) lock.waitLock(20000);
   try {
     switch (p.action) {
-      case 'state': return state_(u);
+      case 'state': return state_(u, p);
       case 'pick': return pick_(u, p);
       case 'yield': return yield_(u, p);
       case 'setMyUnit': return setMyUnit_(u, p);
+      case 'friendScan': return friendScan_(u);
       case 'fileAdd': return fileAdd_(u, p);
       case 'hlReq': return hlReq_(u, p);
       case 'hlPeer': return hlPeer_(u, p);
@@ -221,8 +222,8 @@ function notifyTurn_(month, cfg) {
 function testPush() { push_(idsAdmins_(), '🔔 ทดสอบแจ้งเตือน แผนงานระดมทีม กฟจ.กระบี่'); }
 
 // ================= state =================
-function state_(u) {
-  const out = {ok: true, me: {lineId: u.lineId, name: u.name, pic: u.pic, unit: u.unit, role: u.role, status: u.status}};
+function state_(u, p) {
+  const out = {ok: true, me: {lineId: u.lineId, name: u.name, pic: u.pic, unit: u.unit, role: u.role, status: u.status, friend: friendOf_(u, p && p.recheck)}};
   if (u.status !== 'approved') return out;
   out.events = rows_('Events').map(e => ({id: e.id, start: e.start, end: e.end, type: e.type, unit: e.unit, title: e.title, crew: e.crew, hl: e.hl === true || e.hl === 'TRUE', photos: e.photos ? String(e.photos).split(',') : [], src: e.src, ofOut: e.ofOut}));
   out.active = getCfg_('active', '');
@@ -238,7 +239,7 @@ function state_(u) {
   const seeAll = isPlanner_(u);
   out.unitPlans = rows_('UnitPlans').filter(x => seeAll || x.unit === u.unit).map(x => ({id: x.id, unit: x.unit, start: x.start, end: x.end, kind: x.kind, title: x.title, crew: x.crew, status: x.status, mob: x.mob === true || x.mob === 'TRUE', outId: x.outId, photos: x.photos ? String(x.photos).split(',') : [], note: x.note, by: x.createdBy}));
   out.audit = rows_('Audit').slice(-60).reverse().map(a => ({at: a.at, by: a.by, action: a.action, detail: a.detail}));
-  if (isCo_(u) || isPlanner_(u)) out.users = rows_('Users').map(x => ({lineId: x.lineId, name: x.name, pic: x.pic, unit: x.unit, role: x.role, status: x.status, lastLogin: x.lastLogin}));
+  if (isCo_(u) || isPlanner_(u)) out.users = rows_('Users').map(x => ({lineId: x.lineId, name: x.name, pic: x.pic, unit: x.unit, role: x.role, status: x.status, lastLogin: x.lastLogin, friend: x.friend || '', friendAt: x.friendAt || ''}));
   return out;
 }
 
@@ -728,6 +729,7 @@ function botUser_(uid) { return rows_('Users').find(x => x.lineId === uid && x.s
 function botEvent_(ev) {
   if (!ev.source || ev.source.type !== 'user') return; // ทำงานเฉพาะแชท 1:1
   const uid = ev.source.userId;
+  if (ev.type === 'follow' || ev.type === 'unfollow') { friendSet_(uid, ev.type === 'follow' ? 'Y' : 'N'); if (ev.type === 'unfollow') return; }
   const u = botUser_(uid);
   if (!u) { if (ev.replyToken) botReply_(ev.replyToken, [{type: 'text', text: 'ยังไม่ได้ลงทะเบียนใช้งานแผนระดมทีม\nเปิดลิงก์นี้เพื่อล็อกอินด้วย LINE แล้วรอแอดมินอนุมัติ\n' + APP_URL}]); return; }
   const lock = LockService.getScriptLock(); lock.waitLock(20000);
@@ -860,3 +862,27 @@ function botUndo_(ev, u) {
 }
 // รันครั้งเดียวในตัวแก้ไข เพื่อขอสิทธิ์ Google Docs (ใช้รวมรูปเป็น PDF)
 function authDocs() { const d = DocumentApp.create('tmp_auth'); DriveApp.getFileById(d.getId()).setTrashed(true); return 'ok'; }
+
+
+// ===== สถานะเพื่อน OA: Y = เพิ่มแล้ว, N = ยังไม่เพิ่ม/บล็อก — ตรวจผ่าน Get profile (404 = ไม่ใช่เพื่อน) + อัปเดตจาก webhook follow/unfollow =====
+function friendCheck_(uid) {
+  const r = UrlFetchApp.fetch('https://api.line.me/v2/bot/profile/' + uid, {headers: {Authorization: 'Bearer ' + SP.getProperty('LINE_TOKEN')}, muteHttpExceptions: true});
+  const c = r.getResponseCode(); return c === 200 ? 'Y' : c === 404 ? 'N' : '';
+}
+function friendSet_(uid, v) {
+  const t = rows_('Users').find(x => x.lineId === uid); if (!t || !v) return;
+  update_('Users', t._row, {friend: v, friendAt: new Date().toISOString()});
+  CacheService.getScriptCache().put('fr:' + uid, v, 600);
+}
+function friendOf_(u, recheck) {
+  const c = CacheService.getScriptCache(); const k = 'fr:' + u.lineId;
+  if (!recheck) { const v = c.get(k); if (v) return v; if (u.friend === 'Y') { c.put(k, 'Y', 3600); return 'Y'; } }
+  const v = friendCheck_(u.lineId); if (v && v !== u.friend) friendSet_(u.lineId, v); else if (v) c.put(k, v, 600);
+  return v || u.friend || '';
+}
+function friendScan_(u) {
+  if (!isCo_(u)) throw new Error('เฉพาะแอดมิน/โคแอดมิน');
+  let y = 0, n = 0;
+  rows_('Users').filter(x => x.status !== 'blocked').forEach(x => { const v = friendCheck_(x.lineId); if (v) { if (v !== x.friend) update_('Users', x._row, {friend: v, friendAt: new Date().toISOString()}); v === 'Y' ? y++ : n++; } });
+  return {ok: true, y, n};
+}
