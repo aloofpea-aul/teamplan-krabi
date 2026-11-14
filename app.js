@@ -643,6 +643,15 @@ async function saveRound(status){
   const cfg=Object.assign({},DRAFT);delete cfg._m;delete cfg.turn;delete cfg.status;delete cfg.ro;
   await act('saveRound',{month:SETM,cfg,status,makeActive:status==='open'},status==='open'?'เปิดให้เลือกวันแล้ว':status==='published'?'ประกาศแผนแล้ว':'บันทึกแล้ว');DRAFT=null;
 }
+function quotaBar(){const q=S.quota;if(!isCo()||!q)return '';
+  const lim=q.limit||0,used=q.used||0,pct=lim?Math.min(100,Math.round(used*100/lim)):0,c=pct>=90?'#dc2626':pct>=70?'#d97706':'#16a34a';
+  const left=lim?Math.max(0,lim-used):null;const d=new Date(),days=new Date(d.getFullYear(),d.getMonth()+1,0).getDate()-d.getDate()+1;
+  return `<div class="qbar"><div class="row"><b>📨 โควต้าแจ้งเตือน LINE เดือนนี้</b><span class="sp"></span><span class="note">อัปเดต ${new Date(q.at).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})} น.</span>
+  <button class="btn" onclick="reload(false,1)">🔄</button></div>
+  <div class="qtrack"><div style="width:${pct}%;background:${c}"></div></div>
+  <div class="row note" style="gap:12px;flex-wrap:wrap"><span>ใช้ไป <b style="color:${c}">${used}</b> / ${lim||'ไม่จำกัด'} ข้อความ</span>${left!=null?`<span>เหลือ <b>${left}</b> · อีก ${days} วันรีเซ็ต</span>`:''}
+  ${q.queued?`<span>📎 ไฟล์แนบรอส่งสรุป 17:00 น. <b>${q.queued}</b> รายการ</span>`:''}</div>
+  ${pct>=90?'<div class="note" style="color:#dc2626">⚠️ ใกล้เต็ม — เมื่อเต็มแอปยังใช้ได้ปกติ แต่แจ้งเตือน LINE จะหยุดถึงต้นเดือนหน้า (บอทรับไฟล์ในแชท OA ยังใช้ได้ ไม่กินโควต้า)</div>':''}</div>`}
 function usersCard(){
   const co=isCo();const adm=S.me.role==='admin';
   const users=[...S.users].sort((a,b)=>(a.status==='pending'?-1:0)-(b.status==='pending'?-1:0));
@@ -650,6 +659,7 @@ function usersCard(){
   ${(()=>{const ap=S.users.filter(x=>x.status==='approved');const no=ap.filter(x=>x.friend==='N');const unk=ap.filter(x=>!x.friend);
    return `<div class="oasum ${no.length?'bad':''}"><b>${no.length?`⚠️ ยังไม่เพิ่ม OA ${no.length} คน`:'✅ ทุกคนเพิ่ม OA แล้ว'}</b>${no.length?`<span> — ${no.map(x=>esc(x.name)+(x.unit?' ('+x.unit+'.)':'')).join(', ')} · คนกลุ่มนี้จะไม่ได้รับแจ้งเตือน LINE</span>`:''}${unk.length?`<span class="note"> · ยังไม่ได้ตรวจ ${unk.length} คน</span>`:''}
    ${co?`<button class="btn" style="margin-left:auto" onclick="act('friendScan',{},'ตรวจสถานะ OA ทุกคนแล้ว')">🔄 ตรวจสถานะ OA ทุกคน</button>`:''}</div>`})()}
+  ${quotaBar()}
   <table style="margin-top:6px"><tr><th>ชื่อ LINE</th><th>OA</th><th>หน่วยงาน</th><th>สิทธิ์</th><th>สถานะ</th><th></th></tr>
   ${users.map(x=>{const lock=!co||(x.role==='admin'&&!adm);const k=x.lineId;
    return `<tr><td>${x.pic?`<img src="${esc(x.pic)}" style="width:26px;height:26px;border-radius:50%;vertical-align:middle;margin-right:6px">`:''}${esc(x.name)}</td>

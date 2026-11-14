@@ -201,6 +201,7 @@ function mName_(ym) { const [y, m] = ym.split('-').map(Number); return TMN[m - 1
 function thD_(d) { const [y, m, dd] = d.split('-').map(Number); return dd + ' ' + TMN[m - 1].slice(0, 3) + '.'; }
 function push_(ids, text) {
   const token = SP.getProperty('LINE_TOKEN'); ids = [...new Set(ids.filter(Boolean))];
+  const nf = {}; rows_('Users').forEach(x => { if (x.friend === 'N') nf[x.lineId] = 1; }); ids = ids.filter(id => !nf[id]); // ไม่ได้แอด OA = ส่งไม่ถึง ไม่ต้องยิง
   if (!token || !ids.length) return;
   try {
     UrlFetchApp.fetch('https://api.line.me/v2/bot/message/multicast', {method: 'post', contentType: 'application/json',
@@ -211,15 +212,54 @@ function push_(ids, text) {
 function approved_() { return rows_('Users').filter(u => u.status === 'approved'); }
 function idsOfUnit_(unit) { return approved_().filter(u => u.unit === unit && rank_(u) >= 2).map(u => u.lineId); }
 function idsAll_() { return approved_().map(u => u.lineId); }
+function idsPickers_() { return approved_().filter(u => rank_(u) >= 2).map(u => u.lineId); }
+// หน่วยที่มาช่วยงาน = ทุกหน่วย ยกเว้นเจ้าของงาน และหน่วยที่ถูกตัดออก
+function helpers_(ev) { const sk = getCfg_('skip:' + ev.id, []); return UNITS.filter(x => x !== ev.unit && sk.indexOf(x) < 0); }
 function idsAdmins_() { return approved_().filter(u => rank_(u) >= 4).map(u => u.lineId); }
 function notifyTurn_(month, cfg) {
-  if (cfg.status === 'swap') { push_(idsAll_(), '✅ แผนระดมทีม ' + mName_(month) + '\nทุกหน่วยเลือกวันครบแล้ว — ถ้าต้องการเปลี่ยน กด “ขอเปลี่ยนแผน” ในหน้าปฏิทิน (ก่อนประกาศแผน'); return; }
+  if (cfg.status === 'swap') { push_(idsPickers_(), '✅ แผนระดมทีม ' + mName_(month) + '\nทุกหน่วยเลือกวันครบแล้ว — ถ้าต้องการเปลี่ยน กด “ขอเปลี่ยนแผน” ในหน้าปฏิทิน (ก่อนประกาศแผน'); return; }
   if (cfg.status !== 'open') return;
   const unit = cur_(cfg);
   push_(idsOfUnit_(unit), '✋ ถึงคิว ' + UNAME[unit] + ' เลือกวันดับไฟระดมทีม\nเดือน ' + mName_(month) + ' · รอบที่ ' + cfg.turn.round + ' · เลือกได้ ' + q_(cfg, unit) + ' วัน\nหน่วยถัดไปรอคุณยืนยันอยู่ครับ');
 }
 /** ทดสอบส่งข้อความหาแอดมิน (รันจากหน้า Apps Script) */
 function testPush() { push_(idsAdmins_(), '🔔 ทดสอบแจ้งเตือน แผนงานระดมทีม กฟจ.กระบี่'); }
+
+// ================= สรุปไฟล์แนบรายวัน (ประหยัดโควต้า: คนละ 1 ข้อความ/วัน) =================
+function digestSend() {
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  let q; try { q = getCfg_('digestQ', []); if (!q.length) return; setCfg_('digestQ', []); } finally { lock.releaseLock(); }
+  const files = rows_('Files'), evs = rows_('Events'), per = {}, units = {};
+  approved_().filter(x => rank_(x) >= 2).forEach(x => (units[x.unit] = units[x.unit] || []).push(x.lineId));
+  const add = (us, by, line) => us.forEach(un => (units[un] || []).forEach(id => { if (id === by) return; (per[id] = per[id] || []).indexOf(line) < 0 && per[id].push(line); }));
+  q.forEach(it => {
+    const f = files.find(x => x.id === it.fid); if (!f) return; // ลบไปแล้ว
+    const ev = evs.find(x => x.id === f.evId); if (!ev) return;
+    const h = helpers_(ev);
+    if (f.kind === 'inv') add(h, it.by, '✉️ หนังสือเชิญ ' + UNAME[ev.unit] + ' · ' + thD_(ev.start) + ' ' + ev.title);
+    else if (f.to === 'all') add(h, it.by, '💰 ค่าแรง (รวมทุกหน่วย) งาน ' + UNAME[ev.unit] + ' · ' + thD_(ev.start));
+    else if (h.indexOf(f.to) >= 0 || f.to === ev.unit) add([f.to], it.by, '💰 ค่าแรง ' + UNAME[f.to] + ' งาน ' + UNAME[ev.unit] + ' · ' + thD_(ev.start));
+  });
+  const grp = {}; Object.keys(per).forEach(id => { const t = per[id].slice(0, 15).join('\n') + (per[id].length > 15 ? '\n…และอีก ' + (per[id].length - 15) + ' รายการ' : ''); (grp[t] = grp[t] || []).push(id); });
+  Object.keys(grp).forEach(t => push_(grp[t], '📎 สรุปไฟล์แนบใหม่วันนี้\n' + t + '\nเปิดแอป → แตะวันที่ เพื่อดาวน์โหลด'));
+}
+/** ติดตั้งตัวตั้งเวลาส่งสรุป 17:00 ทุกวัน (รันครั้งเดียวจากหน้า Apps Script) */
+function installDigest() {
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'digestSend').forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('digestSend').timeBased().everyDays(1).atHour(17).inTimezone('Asia/Bangkok').create();
+  return 'ok';
+}
+// โควต้าข้อความ LINE OA เดือนนี้ (ดึงฟรี · แคช 10 นาที)
+function quota_(force) {
+  const c = CacheService.getScriptCache(), k = 'oaQuota'; if (!force) { const v = c.get(k); if (v) return JSON.parse(v); }
+  const h = {headers: {Authorization: 'Bearer ' + SP.getProperty('LINE_TOKEN')}, muteHttpExceptions: true};
+  try {
+    const a = JSON.parse(UrlFetchApp.fetch('https://api.line.me/v2/bot/message/quota', h).getContentText());
+    const b = JSON.parse(UrlFetchApp.fetch('https://api.line.me/v2/bot/message/quota/consumption', h).getContentText());
+    const o = {limit: a.type === 'limited' ? a.value : null, used: b.totalUsage || 0, at: new Date().toISOString(), queued: getCfg_('digestQ', []).length};
+    c.put(k, JSON.stringify(o), 600); return o;
+  } catch (e) { return null; }
+}
 
 // ================= state =================
 function state_(u, p) {
@@ -239,6 +279,7 @@ function state_(u, p) {
   const seeAll = isPlanner_(u);
   out.unitPlans = rows_('UnitPlans').filter(x => seeAll || x.unit === u.unit).map(x => ({id: x.id, unit: x.unit, start: x.start, end: x.end, kind: x.kind, title: x.title, crew: x.crew, status: x.status, mob: x.mob === true || x.mob === 'TRUE', outId: x.outId, photos: x.photos ? String(x.photos).split(',') : [], note: x.note, by: x.createdBy}));
   out.audit = rows_('Audit').slice(-60).reverse().map(a => ({at: a.at, by: a.by, action: a.action, detail: a.detail}));
+  if (isCo_(u)) out.quota = quota_(p && p.recheck);
   if (isCo_(u) || isPlanner_(u)) out.users = rows_('Users').map(x => ({lineId: x.lineId, name: x.name, pic: x.pic, unit: x.unit, role: x.role, status: x.status, lastLogin: x.lastLogin, friend: x.friend || '', friendAt: x.friendAt || ''}));
   return out;
 }
@@ -484,7 +525,7 @@ function saveRound_(u, p) {
   const prev = old ? old.status : '';
   setCfg_('round:' + month, cfg);
   if (p.makeActive) setCfg_('active', month);
-  if (p.status === 'open' && prev !== 'open') { push_(idsAll_(), '📅 เปิดเลือกวันดับไฟระดมทีม เดือน ' + mName_(month) + '\n' + cfg.rounds + ' รอบ · เรียงตามลำดับสิทธิ์ ' + cfg.order.map(x => x + '.').join(' → ') + (cfg.deadline ? '\nปิดรับ ' + thD_(cfg.deadline) : '')); notifyTurn_(month, cfg); }
+  if (p.status === 'open' && prev !== 'open') { push_(idsPickers_(), '📅 เปิดเลือกวันดับไฟระดมทีม เดือน ' + mName_(month) + '\n' + cfg.rounds + ' รอบ · เรียงตามลำดับสิทธิ์ ' + cfg.order.map(x => x + '.').join(' → ') + (cfg.deadline ? '\nปิดรับ ' + thD_(cfg.deadline) : '')); notifyTurn_(month, cfg); }
   if (reorder && prev === 'open' && cfg.status === 'open' && cfg.turn.idx >= 2) notifyTurn_(month, cfg);
   if (p.status === 'published' && prev !== 'published') push_(idsAll_(), '📢 ประกาศแผนงานระดมทีม เดือน ' + mName_(month) + ' แล้ว\nดูปฏิทินและพิมพ์แผนได้ที่ลิงก์');
   audit_(u, 'ตั้งค่ารอบ ' + month, {status: cfg.status, rounds: cfg.rounds});
@@ -657,10 +698,7 @@ function fileStore_(u, ev, kind, to, blob, notify) {
   const row = {id: newId_(), evId: ev.id, kind, to, name, fileId: f.getId(), mime: blob.getContentType(), size: blob.getBytes().length, by: u.lineId, byName: u.name, at: new Date().toISOString()};
   append_('Files', row);
   audit_(u, kind === 'inv' ? 'แนบหนังสือเชิญ' : 'แนบค่าแรง', ev.start + ' ' + ev.unit + ' · ' + name + (to ? ' → ' + to : ''));
-  if (notify) {
-    if (kind === 'inv') push_(idsAll_().filter(id => id !== u.lineId), '✉️ ' + UNAME[ev.unit] + ' แนบหนังสือเชิญร่วมงานระดมทีม\n' + thD_(ev.start) + ' · ' + ev.title + '\nเปิดแอป → แตะวันที่ เพื่อดาวน์โหลด');
-    else { const ids = to === 'all' ? idsAll_() : idsOfUnit_(to); push_(ids.filter(id => id !== u.lineId), '💰 ' + UNAME[ev.unit] + ' แนบไฟล์ค่าแรง' + (to === 'all' ? 'รวมทุกหน่วย' : ' ' + UNAME[to]) + '\nงาน ' + thD_(ev.start) + ' · ' + ev.title); }
-  }
+  if (notify) { const q = getCfg_('digestQ', []); q.push({fid: row.id, by: u.lineId}); setCfg_('digestQ', q); } // รวมส่งสรุปวันละครั้ง 17:00
   return row;
 }
 function fileDel_(u, p) {
